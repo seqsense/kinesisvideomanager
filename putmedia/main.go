@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"time"
@@ -21,6 +20,8 @@ const (
 )
 
 func main() {
+	log.SetFlags(log.Lmicroseconds)
+
 	sess := session.Must(session.NewSession())
 
 	config := aws.NewConfig()
@@ -191,9 +192,12 @@ func main() {
 	defer res.Body.Close()
 	log.Printf("response: %v", res.Header)
 
-	b, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		log.Fatal(err)
+	for {
+		b := make([]byte, 1024)
+		n, err := res.Body.Read(b)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("response: %s", string(b[:n]))
 	}
-	log.Printf("media: %s", string(b))
 }
