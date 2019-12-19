@@ -86,6 +86,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Print("send request")
 	var client http.Client
 	res, err := client.Do(req)
 	if err != nil {
