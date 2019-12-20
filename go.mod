@@ -8,5 +8,3 @@ require (
 	github.com/stretchr/testify v1.4.0 // indirect
 	golang.org/x/net v0.0.0-20191209160850-c0dbc17a3553 // indirect
 )
-
-replace github.com/at-wat/ebml-go => ../../at-wat/ebml-go
