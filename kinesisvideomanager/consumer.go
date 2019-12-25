@@ -41,7 +41,7 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 	}, nil
 }
 
-func (c *Consumer) GetMedia(ch chan *Cluster) (*Container, error) {
+func (c *Consumer) GetMedia(ch chan ebml.Block, chTag chan Tag) (*Container, error) {
 	body, err := json.Marshal(
 		&GetMediaBody{
 			StartSelector: StartSelector{
@@ -76,7 +76,8 @@ func (c *Consumer) GetMedia(ch chan *Cluster) (*Container, error) {
 	}
 	defer res.Body.Close()
 	data := &Container{}
-	data.Segment.Cluster = ch
+	data.Segment.Cluster.SimpleBlock = ch
+	data.Segment.Tags.Tag = chTag
 	if err := ebml.Unmarshal(res.Body, data); err != nil {
 		return nil, err
 	}
