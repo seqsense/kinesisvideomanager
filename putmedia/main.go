@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 
 	"github.com/at-wat/ebml-go"
-
 	kvm "github.com/seqsense/kinesis-test/kinesisvideomanager"
 )
 
@@ -30,42 +29,44 @@ func main() {
 		log.Fatal(err)
 	}
 
-	start := time.Now()
-
-	for {
-		ch := make(chan *kvm.Cluster, 10)
+	for i := uint64(0); ; i += 10000 {
+		start := time.Now()
+		ch := make(chan ebml.Block, 10)
+		chTag := make(chan kvm.Tag)
+		chClosed := make(chan struct{})
 		go func() {
-			for i := 0; i < 5; i++ {
-				t := time.Now().Sub(start)
-				data := &kvm.Cluster{
-					Timecode: uint64(t) / 1000000,
-					Position: 0,
-					SimpleBlock: []ebml.Block{
-						{1, 10, true, false, ebml.LacingNo, false, [][]byte{{0x30, 0x31}}},
-					},
+			close(chTag)
+			go func() {
+				for i := 0; i < 100; i++ {
+					t := time.Now().Sub(start)
+					data := ebml.Block{
+						1, int16(uint64(t) / 1000000), true, false, ebml.LacingNo, false,
+						[][]byte{{0x30, 0x31}},
+					}
+					log.Printf("write: %v", data)
+					ch <- data
+					time.Sleep(100 * time.Millisecond)
 				}
-				log.Printf("write: %v", *data)
-				ch <- data
-				time.Sleep(200 * time.Millisecond)
-			}
-			close(ch)
-		}()
-
-		res, err := pro.PutMedia(ch)
-		if err != nil {
-			log.Fatal(err)
-		}
-		for {
-			b := make([]byte, 4096)
-			n, err := res.Read(b)
-			if err == io.EOF {
-				res.Close()
-				break
-			}
+				close(ch)
+				close(chClosed)
+			}()
+			res, err := pro.PutMedia(i, ch, chTag)
 			if err != nil {
 				log.Fatal(err)
 			}
-			log.Printf("response: %s", string(b[:n]))
-		}
+			for {
+				b := make([]byte, 4096)
+				n, err := res.Read(b)
+				if err == io.EOF {
+					res.Close()
+					break
+				}
+				if err != nil {
+					log.Fatal(err)
+				}
+				log.Printf("response: %s", string(b[:n]))
+			}
+		}()
+		<-chClosed
 	}
 }

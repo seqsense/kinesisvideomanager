@@ -39,8 +39,8 @@ type Tracks struct {
 }
 type Cluster struct {
 	Timecode    uint64
-	Position    uint64
-	SimpleBlock []ebml.Block
+	Position    uint64 `ebml:",omitempty"`
+	SimpleBlock chan ebml.Block
 }
 type SimpleTag struct {
 	TagName   string
@@ -51,11 +51,11 @@ type Tag struct {
 	SimpleTag []SimpleTag
 }
 type Tags struct {
-	Tag []Tag
+	Tag chan Tag `ebml:",omitempty"`
 }
 type Segment struct {
 	Info    Info
 	Tracks  Tracks
-	Cluster chan *Cluster `ebml:",size=unknown"`
-	Tags    []Tags
+	Cluster Cluster `ebml:",size=unknown"`
+	Tags    Tags
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/session"
 
+	"github.com/at-wat/ebml-go"
 	kvm "github.com/seqsense/kinesis-test/kinesisvideomanager"
 )
 
@@ -26,22 +27,25 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for {
-		ch := make(chan *kvm.Cluster)
-		go func() {
-			for {
-				c, ok := <-ch
+	ch := make(chan ebml.Block)
+	chTag := make(chan kvm.Tag)
+	go func() {
+		for {
+			select {
+			case tag := <-chTag:
+				log.Printf("tag: %v", tag)
+			case c, ok := <-ch:
 				if !ok {
 					return
 				}
-				log.Printf("cluster: %v", *c)
+				log.Printf("block: %v", c)
 			}
-		}()
-		data, err := con.GetMedia(ch)
-		if err != nil {
-			log.Fatal(err)
 		}
-		log.Printf("container: %v", *data)
-		close(ch)
+	}()
+	data, err := con.GetMedia(ch, chTag)
+	if err != nil {
+		log.Fatal(err)
 	}
+	log.Printf("container: %v", data)
+	close(ch)
 }

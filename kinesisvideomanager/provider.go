@@ -41,57 +41,48 @@ func (c *Client) Provider(streamID StreamID) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) PutMedia(ch chan *Cluster) (io.ReadCloser, error) {
-	data :=
-		struct {
-			Header  EBMLHeader `ebml:"EBML"`
-			Segment Segment    `ebml:",size=unknown"`
-		}{
-			Header: EBMLHeader{
-				EBMLVersion:            1,
-				EBMLReadVersion:        1,
-				EBMLMaxIDLength:        4,
-				EBMLMaxSizeLength:      8,
-				EBMLDocType:            "matroska",
-				EBMLDocTypeVersion:     2,
-				EBMLDocTypeReadVersion: 2,
+func (p *Provider) PutMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan Tag) (io.ReadCloser, error) {
+	data := struct {
+		Header  EBMLHeader `ebml:"EBML"`
+		Segment Segment    `ebml:",size=unknown"`
+	}{
+		Header: EBMLHeader{
+			EBMLVersion:            1,
+			EBMLReadVersion:        1,
+			EBMLMaxIDLength:        4,
+			EBMLMaxSizeLength:      8,
+			EBMLDocType:            "matroska",
+			EBMLDocTypeVersion:     2,
+			EBMLDocTypeReadVersion: 2,
+		},
+		Segment: Segment{
+			Info: Info{
+				SegmentUID:    []byte{0x4d, 0xe9, 0x96, 0x8a, 0x3f, 0x22, 0xea, 0x11, 0x6f, 0x88, 0xc3, 0xbc, 0x96, 0x42, 0x51, 0xdc},
+				TimecodeScale: 1000000,
+				Title:         "TestApp",
+				MuxingApp:     "TestApp",
+				WritingApp:    "TestApp",
 			},
-			Segment: Segment{
-				Info: Info{
-					SegmentUID:    []byte{0x4d, 0xe9, 0x96, 0x8a, 0x3f, 0x22, 0xea, 0x11, 0x6f, 0x88, 0xc3, 0xbc, 0x96, 0x42, 0x51, 0xdc},
-					TimecodeScale: 1000000,
-					Title:         "TestApp",
-					MuxingApp:     "TestApp",
-					WritingApp:    "TestApp",
-				},
-				Tracks: Tracks{
-					TrackEntry: []TrackEntry{
-						{
-							TrackNumber: 1,
-							TrackUID:    123,
-							TrackType:   1,
-							CodecID:     "X_TEST",
-							Name:        "test_track",
-						},
-					},
-				},
-				Cluster: ch,
-				Tags: []Tags{
+			Tracks: Tracks{
+				TrackEntry: []TrackEntry{
 					{
-						Tag: []Tag{
-							{
-								SimpleTag: []SimpleTag{
-									{
-										TagName:   "TestTag",
-										TagString: "test string",
-									},
-								},
-							},
-						},
+						TrackNumber: 1,
+						TrackUID:    123,
+						TrackType:   1,
+						CodecID:     "X_TEST",
+						Name:        "test_track",
 					},
 				},
 			},
-		}
+			Cluster: Cluster{
+				Timecode:    baseTimecode,
+				SimpleBlock: ch,
+			},
+			Tags: Tags{
+				Tag: chTag,
+			},
+		},
+	}
 
 	r, w := io.Pipe()
 	chErr := make(chan error)
