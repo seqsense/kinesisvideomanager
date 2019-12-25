@@ -29,28 +29,49 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for i := uint64(0); ; i += 10000 {
+	type BlockChWithBaseTime struct {
+		Timecode uint64
+		Block    chan ebml.Block
+	}
+	chBlockChWithBaseTime := make(chan BlockChWithBaseTime)
+	go func() {
 		start := time.Now()
-		ch := make(chan ebml.Block, 10)
-		chTag := make(chan kvm.Tag)
-		close(chTag)
-		chClosed := make(chan struct{})
-		go func() {
+		donePrevious := make(chan struct{})
+		close(donePrevious)
+		for {
+			tBase := uint64(time.Now().Sub(start))/1000000 + 1000
+			ch := make(chan ebml.Block)
+			chBlockChWithBaseTime <- BlockChWithBaseTime{
+				Timecode: tBase,
+				Block:    ch,
+			}
+			<-donePrevious
+			donePrevious = make(chan struct{})
 			go func() {
-				for i := 0; i < 100; i++ {
-					t := time.Now().Sub(start)
+				for i := 0; i < 90; i++ {
+					t := uint64(time.Now().Sub(start)) / 1000000
+
 					data := ebml.Block{
-						1, int16(uint64(t) / 1000000), true, false, ebml.LacingNo, false,
+						1, int16(t - tBase), true, false, ebml.LacingNo, false,
 						[][]byte{{0x30, 0x31}},
 					}
-					log.Printf("write: %v", data)
+					log.Printf("write: %d, %v", tBase, data)
 					ch <- data
 					time.Sleep(100 * time.Millisecond)
 				}
+				close(donePrevious)
 				close(ch)
-				close(chClosed)
 			}()
-			res, err := pro.PutMedia(i, ch, chTag)
+			time.Sleep(8 * time.Second)
+		}
+	}()
+
+	for {
+		bt := <-chBlockChWithBaseTime
+		go func() {
+			chTag := make(chan kvm.Tag)
+			close(chTag)
+			res, err := pro.PutMedia(bt.Timecode, bt.Block, chTag)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -67,6 +88,5 @@ func main() {
 				log.Printf("response: %s", string(b[:n]))
 			}
 		}()
-		<-chClosed
 	}
 }
