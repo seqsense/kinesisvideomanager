@@ -43,8 +43,8 @@ func (c *Client) Provider(streamID StreamID) (*Provider, error) {
 
 func (p *Provider) PutMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan Tag) (io.ReadCloser, error) {
 	data := struct {
-		Header  EBMLHeader `ebml:"EBML"`
-		Segment Segment    `ebml:",size=unknown"`
+		Header  EBMLHeader   `ebml:"EBML"`
+		Segment SegmentWrite `ebml:",size=unknown"`
 	}{
 		Header: EBMLHeader{
 			EBMLVersion:            1,
@@ -55,7 +55,7 @@ func (p *Provider) PutMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 			EBMLDocTypeVersion:     2,
 			EBMLDocTypeReadVersion: 2,
 		},
-		Segment: Segment{
+		Segment: SegmentWrite{
 			Info: Info{
 				SegmentUID:    []byte{0x4d, 0xe9, 0x96, 0x8a, 0x3f, 0x22, 0xea, 0x11, 0x6f, 0x88, 0xc3, 0xbc, 0x96, 0x42, 0x51, 0xdc},
 				TimecodeScale: 1000000,
@@ -74,7 +74,7 @@ func (p *Provider) PutMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 					},
 				},
 			},
-			Cluster: Cluster{
+			Cluster: ClusterWrite{
 				Timecode:    baseTimecode,
 				SimpleBlock: ch,
 			},

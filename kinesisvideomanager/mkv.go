@@ -38,6 +38,11 @@ type Tracks struct {
 	TrackEntry []TrackEntry
 }
 type Cluster struct {
+	Timecode    chan uint64
+	Position    uint64 `ebml:",omitempty"`
+	SimpleBlock chan ebml.Block
+}
+type ClusterWrite struct {
 	Timecode    uint64
 	Position    uint64 `ebml:",omitempty"`
 	SimpleBlock chan ebml.Block
@@ -57,5 +62,11 @@ type Segment struct {
 	Info    Info
 	Tracks  Tracks
 	Cluster Cluster `ebml:",size=unknown"`
+	Tags    Tags
+}
+type SegmentWrite struct {
+	Info    Info
+	Tracks  Tracks
+	Cluster ClusterWrite `ebml:",size=unknown"`
 	Tags    Tags
 }
