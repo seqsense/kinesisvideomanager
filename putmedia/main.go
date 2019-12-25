@@ -33,9 +33,9 @@ func main() {
 		start := time.Now()
 		ch := make(chan ebml.Block, 10)
 		chTag := make(chan kvm.Tag)
+		close(chTag)
 		chClosed := make(chan struct{})
 		go func() {
-			close(chTag)
 			go func() {
 				for i := 0; i < 100; i++ {
 					t := time.Now().Sub(start)

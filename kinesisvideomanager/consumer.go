@@ -41,7 +41,12 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 	}, nil
 }
 
-func (c *Consumer) GetMedia(ch chan ebml.Block, chTag chan Tag) (*Container, error) {
+type BlockWithBaseTimecode struct {
+	Timecode uint64
+	Block    ebml.Block
+}
+
+func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan Tag) (*Container, error) {
 	body, err := json.Marshal(
 		&GetMediaBody{
 			StartSelector: StartSelector{
@@ -75,8 +80,29 @@ func (c *Consumer) GetMedia(ch chan ebml.Block, chTag chan Tag) (*Container, err
 		return nil, err
 	}
 	defer res.Body.Close()
+
+	chBlock := make(chan ebml.Block)
+	chTimecode := make(chan uint64)
+	go func() {
+		var baseTime uint64
+		for {
+			select {
+			case baseTime = <-chTimecode:
+			case b, ok := <-chBlock:
+				if !ok {
+					return
+				}
+				ch <- &BlockWithBaseTimecode{
+					Timecode: baseTime,
+					Block:    b,
+				}
+			}
+		}
+	}()
+
 	data := &Container{}
-	data.Segment.Cluster.SimpleBlock = ch
+	data.Segment.Cluster.Timecode = chTimecode
+	data.Segment.Cluster.SimpleBlock = chBlock
 	data.Segment.Tags.Tag = chTag
 	if err := ebml.Unmarshal(res.Body, data); err != nil {
 		return nil, err

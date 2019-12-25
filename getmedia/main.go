@@ -5,7 +5,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/session"
 
-	"github.com/at-wat/ebml-go"
 	kvm "github.com/seqsense/kinesis-test/kinesisvideomanager"
 )
 
@@ -27,7 +26,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ch := make(chan ebml.Block)
+	ch := make(chan *kvm.BlockWithBaseTimecode)
 	chTag := make(chan kvm.Tag)
 	go func() {
 		for {
