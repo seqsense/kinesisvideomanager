@@ -41,7 +41,7 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 	}, nil
 }
 
-func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan Tag) (*Container, error) {
+func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag) (*Container, error) {
 	body, err := json.Marshal(
 		&GetMediaBody{
 			StartSelector: StartSelector{

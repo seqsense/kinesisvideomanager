@@ -56,7 +56,7 @@ type Tag struct {
 	SimpleTag []SimpleTag
 }
 type Tags struct {
-	Tag chan Tag `ebml:",omitempty"`
+	Tag chan *Tag `ebml:",omitempty"`
 }
 type Segment struct {
 	Info    Info

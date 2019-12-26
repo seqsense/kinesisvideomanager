@@ -9,8 +9,8 @@ type BlockWithBaseTimecode struct {
 	Block    ebml.Block
 }
 
-type BlockChWithBaseTime struct {
+type BlockChWithBaseTimecode struct {
 	Timecode uint64
 	Block    chan ebml.Block
-	Tag      chan Tag
+	Tag      chan *Tag
 }

@@ -27,7 +27,7 @@ func main() {
 	}
 
 	ch := make(chan *kvm.BlockWithBaseTimecode)
-	chTag := make(chan kvm.Tag)
+	chTag := make(chan *kvm.Tag)
 	go func() {
 		for {
 			select {
