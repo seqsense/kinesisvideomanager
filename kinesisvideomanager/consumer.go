@@ -41,12 +41,7 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 	}, nil
 }
 
-type BlockWithBaseTimecode struct {
-	Timecode uint64
-	Block    ebml.Block
-}
-
-func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan Tag) (*Container, error) {
+func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag) (*Container, error) {
 	body, err := json.Marshal(
 		&GetMediaBody{
 			StartSelector: StartSelector{

@@ -3,6 +3,7 @@ package kinesisvideomanager
 import (
 	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -41,7 +42,87 @@ func (c *Client) Provider(streamID StreamID) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) PutMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan Tag) (io.ReadCloser, error) {
+func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag) error {
+	chBlockChWithBaseTimecode := make(chan *BlockChWithBaseTimecode)
+	go func() {
+		var nextConn *BlockChWithBaseTimecode
+		var conn *BlockChWithBaseTimecode
+		for {
+			select {
+			case tag := <-chTag:
+				conn.Tag <- tag
+			case bt, ok := <-ch:
+				if !ok {
+					return
+				}
+				absTime := uint64(int64(bt.Timecode) + int64(bt.Block.Timecode))
+				if conn == nil || (nextConn == nil && conn.Timecode+8000 < absTime) {
+					// Prepare next connection
+					chBlock := make(chan ebml.Block)
+					chTag := make(chan *Tag)
+					nextConn = &BlockChWithBaseTimecode{
+						Timecode: absTime + 1000,
+						Block:    chBlock,
+						Tag:      chTag,
+					}
+					chBlockChWithBaseTimecode <- nextConn
+				}
+				if conn == nil || conn.Timecode+9000 < absTime {
+					// Switch to next connection
+					if conn != nil {
+						close(conn.Block)
+						close(conn.Tag)
+					}
+					conn = nextConn
+					nextConn = nil
+				}
+				bt.Block.Timecode = int16(absTime - conn.Timecode)
+				conn.Block <- bt.Block
+			}
+		}
+	}()
+
+	return p.putSegments(chBlockChWithBaseTimecode)
+}
+
+func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode) error {
+	chErr := make(chan error)
+	for {
+		var seg *BlockChWithBaseTimecode
+		var ok bool
+		select {
+		case seg, ok = <-ch:
+			if !ok {
+				return io.EOF
+			}
+		case err := <-chErr:
+			return err
+		}
+		go func() {
+			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag)
+			if err != nil {
+				chErr <- err
+				return
+			}
+			for {
+				b := make([]byte, 4096)
+				n, err := res.Read(b)
+				if err == io.EOF {
+					res.Close()
+					return
+				}
+				if err != nil {
+					chErr <- err
+					return
+				}
+				// TODO: parse and return
+				log.Printf("response: %s", string(b[:n]))
+			}
+		}()
+	}
+}
+
+func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan *Tag) (io.ReadCloser, error) {
 	data := struct {
 		Header  EBMLHeader   `ebml:"EBML"`
 		Segment SegmentWrite `ebml:",size=unknown"`
