@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"log"
 	"time"
 
@@ -29,11 +28,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	type BlockChWithBaseTime struct {
-		Timecode uint64
-		Block    chan ebml.Block
-	}
-	chBlockChWithBaseTime := make(chan BlockChWithBaseTime)
+	chBlockChWithBaseTime := make(chan *kvm.BlockChWithBaseTime)
 	go func() {
 		start := time.Now()
 		donePrevious := make(chan struct{})
@@ -41,9 +36,12 @@ func main() {
 		for {
 			tBase := uint64(time.Now().Sub(start))/1000000 + 1000
 			ch := make(chan ebml.Block)
-			chBlockChWithBaseTime <- BlockChWithBaseTime{
+			chTag := make(chan kvm.Tag)
+			close(chTag)
+			chBlockChWithBaseTime <- &kvm.BlockChWithBaseTime{
 				Timecode: tBase,
 				Block:    ch,
+				Tag:      chTag,
 			}
 			<-donePrevious
 			donePrevious = make(chan struct{})
@@ -65,28 +63,5 @@ func main() {
 			time.Sleep(8 * time.Second)
 		}
 	}()
-
-	for {
-		bt := <-chBlockChWithBaseTime
-		go func() {
-			chTag := make(chan kvm.Tag)
-			close(chTag)
-			res, err := pro.PutMedia(bt.Timecode, bt.Block, chTag)
-			if err != nil {
-				log.Fatal(err)
-			}
-			for {
-				b := make([]byte, 4096)
-				n, err := res.Read(b)
-				if err == io.EOF {
-					res.Close()
-					break
-				}
-				if err != nil {
-					log.Fatal(err)
-				}
-				log.Printf("response: %s", string(b[:n]))
-			}
-		}()
-	}
+	pro.PutMedia(chBlockChWithBaseTime)
 }

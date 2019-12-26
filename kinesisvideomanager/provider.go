@@ -3,6 +3,7 @@ package kinesisvideomanager
 import (
 	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -41,7 +42,44 @@ func (c *Client) Provider(streamID StreamID) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) PutMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan Tag) (io.ReadCloser, error) {
+func (p *Provider) PutMedia(ch chan *BlockChWithBaseTime) error {
+	chErr := make(chan error)
+	for {
+		var seg *BlockChWithBaseTime
+		var ok bool
+		select {
+		case seg, ok = <-ch:
+			if !ok {
+				return io.EOF
+			}
+		case err := <-chErr:
+			return err
+		}
+		go func() {
+			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag)
+			if err != nil {
+				chErr <- err
+				return
+			}
+			for {
+				b := make([]byte, 4096)
+				n, err := res.Read(b)
+				if err == io.EOF {
+					res.Close()
+					return
+				}
+				if err != nil {
+					chErr <- err
+					return
+				}
+				// TODO: parse and return
+				log.Printf("response: %s", string(b[:n]))
+			}
+		}()
+	}
+}
+
+func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan Tag) (io.ReadCloser, error) {
 	data := struct {
 		Header  EBMLHeader   `ebml:"EBML"`
 		Segment SegmentWrite `ebml:",size=unknown"`
