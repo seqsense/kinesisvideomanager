@@ -29,11 +29,11 @@ func main() {
 	}
 
 	l, err := gstlaunch.New(
-		"appsrc name=src format=GST_FORMAT_TIME is-live=true do-timestamp=true ! " +
-			"queue max-size-buffers=20 ! " +
-			"opusparse !" +
-			"opusdec ! " +
-			"pulsesink")
+		"appsrc name=src format=GST_FORMAT_TIME is-live=true do-timestamp=true" +
+			" caps=video/x-vp8 ! " +
+			"vp8dec ! " +
+			"videoconvert ! " +
+			"ximagesink")
 	if err != nil {
 		log.Fatal(err)
 	}

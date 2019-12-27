@@ -31,11 +31,20 @@ func main() {
 	}
 
 	l, err := gstlaunch.New(
-		"pulsesrc ! " +
-			"audio/x-raw,rate=48000,channels=1,format=S16LE !" +
-			"queue max-size-buffers=5 ! " +
-			"opusenc bitrate=32000 bitrate-type=vbr frame-size=40 ! " +
-			"appsink name=sink",
+		"videotestsrc ! " +
+			"video/x-raw,width=640,height=480,framerate=30/1 ! " +
+			"videoconvert ! " +
+			"timeoverlay" +
+			" font-desc=50px" +
+			" draw-outline=true ! " +
+			"tee name=t ! " +
+			"queue ! " +
+			"vp8enc" +
+			" buffer-size=65536 deadline=5" +
+			" target-bitrate=200000 threads=2" +
+			" overshoot=125 undershoot=50 ! " +
+			"appsink name=sink " +
+			"t. ! queue ! videoconvert ! ximagesink",
 	)
 	if err != nil {
 		log.Fatal(err)
