@@ -6,6 +6,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 
 	kvm "github.com/seqsense/kinesis-test/kinesisvideomanager"
+	"github.com/seqsense/sq-gst-go/appsrc"
+	"github.com/seqsense/sq-gst-go/gstlaunch"
 )
 
 const (
@@ -26,6 +28,23 @@ func main() {
 		log.Fatal(err)
 	}
 
+	l, err := gstlaunch.New(
+		"appsrc name=src format=GST_FORMAT_TIME is-live=true do-timestamp=true" +
+			" caps=video/x-vp8 ! " +
+			"vp8dec ! " +
+			"videoconvert ! " +
+			"ximagesink")
+	if err != nil {
+		log.Fatal(err)
+	}
+	src, err := l.GetElement("src")
+	if err != nil {
+		log.Fatal(err)
+	}
+	as := appsrc.New(src)
+	defer as.EOS()
+	l.Start()
+
 	ch := make(chan *kvm.BlockWithBaseTimecode)
 	chTag := make(chan *kvm.Tag)
 	go func() {
@@ -37,7 +56,8 @@ func main() {
 				if !ok {
 					return
 				}
-				log.Printf("block: %v", c)
+				// log.Printf("block: %v", c)
+				as.PushBuffer(c.Block.Data[0])
 			}
 		}
 	}()
