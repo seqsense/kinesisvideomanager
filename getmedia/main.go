@@ -51,7 +51,9 @@ func main() {
 		for {
 			select {
 			case tag := <-chTag:
-				log.Printf("tag: %v", tag)
+				for _, t := range tag.SimpleTag {
+					log.Printf("tag: %s: %s", t.TagName, t.TagString)
+				}
 			case c, ok := <-ch:
 				if !ok {
 					return

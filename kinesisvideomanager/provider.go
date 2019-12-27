@@ -3,7 +3,6 @@ package kinesisvideomanager
 import (
 	"bytes"
 	"io"
-	"log"
 	"net/http"
 	"time"
 
@@ -42,7 +41,7 @@ func (c *Client) Provider(streamID StreamID) (*Provider, error) {
 	}, nil
 }
 
-func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag) error {
+func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent) error {
 	chBlockChWithBaseTimecode := make(chan *BlockChWithBaseTimecode)
 	go func() {
 		var nextConn *BlockChWithBaseTimecode
@@ -82,10 +81,13 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag) err
 		}
 	}()
 
-	return p.putSegments(chBlockChWithBaseTimecode)
+	return p.putSegments(chBlockChWithBaseTimecode, chResp)
 }
 
-func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode) error {
+func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent) error {
+	defer func() {
+		close(chResp)
+	}()
 	chErr := make(chan error)
 	for {
 		var seg *BlockChWithBaseTimecode
@@ -104,19 +106,15 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode) error {
 				chErr <- err
 				return
 			}
-			for {
-				b := make([]byte, 4096)
-				n, err := res.Read(b)
-				if err == io.EOF {
-					res.Close()
-					return
-				}
-				if err != nil {
-					chErr <- err
-					return
-				}
-				// TODO: parse and return
-				log.Printf("response: %s", string(b[:n]))
+
+			var fes []FragmentEvent
+			fes, err = parseFragmentEvent(res)
+			if err != nil {
+				chErr <- err
+				return
+			}
+			for _, fe := range fes {
+				chResp <- fe
 			}
 		}()
 	}

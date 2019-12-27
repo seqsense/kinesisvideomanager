@@ -54,6 +54,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	chResp := make(chan kvm.FragmentEvent, 10)
 	ch := make(chan *kvm.BlockWithBaseTimecode, 10)
 	chTag := make(chan *kvm.Tag, 10)
 	start := time.Now()
@@ -74,5 +75,17 @@ func main() {
 	defer as.Close()
 	l.Start()
 
-	pro.PutMedia(ch, chTag)
+	go func() {
+		for {
+			select {
+			case fe := <-chResp:
+				log.Printf("response: %+v", fe)
+			}
+		}
+	}()
+
+	err = pro.PutMedia(ch, chTag, chResp)
+	if err != nil {
+		log.Printf("failed: %v", err)
+	}
 }
