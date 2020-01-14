@@ -20,9 +20,10 @@ type Provider struct {
 	signer    *v4.Signer
 	httpCli   http.Client
 	cliConfig *client.Config
+	tracks    []TrackEntry
 }
 
-func (c *Client) Provider(streamID StreamID) (*Provider, error) {
+func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, error) {
 	ep, err := c.kv.GetDataEndpoint(
 		&kinesisvideo.GetDataEndpointInput{
 			APIName:    aws.String("PUT_MEDIA"),
@@ -38,6 +39,7 @@ func (c *Client) Provider(streamID StreamID) (*Provider, error) {
 		endpoint:  *ep.DataEndpoint + "/putMedia",
 		signer:    c.signer,
 		cliConfig: c.cliConfig,
+		tracks:    tracks,
 	}, nil
 }
 
@@ -143,15 +145,7 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 				WritingApp:    "TestApp",
 			},
 			Tracks: Tracks{
-				TrackEntry: []TrackEntry{
-					{
-						TrackNumber: 1,
-						TrackUID:    123,
-						TrackType:   1,
-						CodecID:     "X_TEST",
-						Name:        "test_track",
-					},
-				},
+				TrackEntry: p.tracks,
 			},
 			Cluster: ClusterWrite{
 				Timecode:    baseTimecode,
