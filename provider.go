@@ -46,6 +46,8 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent) error {
 	chBlockChWithBaseTimecode := make(chan *BlockChWithBaseTimecode)
 	go func() {
+		defer close(chBlockChWithBaseTimecode)
+
 		var nextConn *BlockChWithBaseTimecode
 		var conn *BlockChWithBaseTimecode
 		for {
