@@ -46,8 +46,6 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag) (*C
 		&GetMediaBody{
 			StartSelector: StartSelector{
 				StartSelectorType: "NOW",
-				//StartSelectorType: "SERVER_TIMESTAMP",
-				//StartTimestamp:    1579582850,
 				// TODO: continue using previous token
 			},
 			StreamName: c.streamID.StreamName(),
