@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesisvideo"
 
 	"github.com/at-wat/ebml-go"
+
+	"github.com/google/uuid"
 )
 
 type Provider struct {
@@ -20,9 +22,10 @@ type Provider struct {
 	signer    *v4.Signer
 	httpCli   http.Client
 	cliConfig *client.Config
+	tracks    []TrackEntry
 }
 
-func (c *Client) Provider(streamID StreamID) (*Provider, error) {
+func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, error) {
 	ep, err := c.kv.GetDataEndpoint(
 		&kinesisvideo.GetDataEndpointInput{
 			APIName:    aws.String("PUT_MEDIA"),
@@ -38,12 +41,15 @@ func (c *Client) Provider(streamID StreamID) (*Provider, error) {
 		endpoint:  *ep.DataEndpoint + "/putMedia",
 		signer:    c.signer,
 		cliConfig: c.cliConfig,
+		tracks:    tracks,
 	}, nil
 }
 
 func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent) error {
 	chBlockChWithBaseTimecode := make(chan *BlockChWithBaseTimecode)
 	go func() {
+		defer close(chBlockChWithBaseTimecode)
+
 		var nextConn *BlockChWithBaseTimecode
 		var conn *BlockChWithBaseTimecode
 		for {
@@ -121,6 +127,11 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 }
 
 func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan *Tag) (io.ReadCloser, error) {
+	segmentUuid, err := generateRandomUUID()
+	if err != nil {
+		return nil, err
+	}
+
 	data := struct {
 		Header  EBMLHeader   `ebml:"EBML"`
 		Segment SegmentWrite `ebml:",size=unknown"`
@@ -136,22 +147,14 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 		},
 		Segment: SegmentWrite{
 			Info: Info{
-				SegmentUID:    []byte{0x4d, 0xe9, 0x96, 0x8a, 0x3f, 0x22, 0xea, 0x11, 0x6f, 0x88, 0xc3, 0xbc, 0x96, 0x42, 0x51, 0xdc},
+				SegmentUID:    segmentUuid,
 				TimecodeScale: 1000000,
-				Title:         "TestApp",
-				MuxingApp:     "TestApp",
-				WritingApp:    "TestApp",
+				Title:         "kinesisvideomanager.Provider",
+				MuxingApp:     "kinesisvideomanager.Provider",
+				WritingApp:    "kinesisvideomanager.Provider",
 			},
 			Tracks: Tracks{
-				TrackEntry: []TrackEntry{
-					{
-						TrackNumber: 1,
-						TrackUID:    123,
-						TrackType:   1,
-						CodecID:     "X_TEST",
-						Name:        "test_track",
-					},
-				},
+				TrackEntry: p.tracks,
 			},
 			Cluster: ClusterWrite{
 				Timecode:    baseTimecode,
@@ -203,4 +206,8 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 		return nil, err
 	}
 	return res.Body, nil
+}
+
+func generateRandomUUID() ([]byte, error) {
+	return uuid.New().MarshalBinary()
 }
