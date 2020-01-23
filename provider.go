@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesisvideo"
 
 	"github.com/at-wat/ebml-go"
+
+	"github.com/google/uuid"
 )
 
 type Provider struct {
@@ -125,6 +127,11 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 }
 
 func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan *Tag) (io.ReadCloser, error) {
+	segmentUuid, err := generateRandomUUID()
+	if err != nil {
+		return nil, err
+	}
+
 	data := struct {
 		Header  EBMLHeader   `ebml:"EBML"`
 		Segment SegmentWrite `ebml:",size=unknown"`
@@ -140,7 +147,7 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 		},
 		Segment: SegmentWrite{
 			Info: Info{
-				SegmentUID:    []byte{0x4d, 0xe9, 0x96, 0x8a, 0x3f, 0x22, 0xea, 0x11, 0x6f, 0x88, 0xc3, 0xbc, 0x96, 0x42, 0x51, 0xdc},
+				SegmentUID:    segmentUuid,
 				TimecodeScale: 1000000,
 				Title:         "kinesisvideomanager.Provider",
 				MuxingApp:     "kinesisvideomanager.Provider",
@@ -199,4 +206,8 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 		return nil, err
 	}
 	return res.Body, nil
+}
+
+func generateRandomUUID() ([]byte, error) {
+	return uuid.New().MarshalBinary()
 }
