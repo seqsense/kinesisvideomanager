@@ -2,6 +2,7 @@ package kinesisvideomanager
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -250,6 +251,10 @@ func WithFragmentTimecodeType(fragmentTimecodeType FragmentTimecodeType) PutMedi
 
 func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.producerStartTimestamp = producerStartTimestamp.Format(time.RFC3339)
+		p.producerStartTimestamp = fmt.Sprintf(
+			"%d.%d",
+			producerStartTimestamp.Unix(),
+			producerStartTimestamp.Nanosecond()/1000000,
+		)
 	}
 }
