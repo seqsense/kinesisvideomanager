@@ -41,15 +41,21 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 	}, nil
 }
 
-func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag) (*Container, error) {
+func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opts ...GetMediaOption) (*Container, error) {
+	options := &GetMediaOptions{
+		startSelector: StartSelector{
+			StartSelectorType: "NOW",
+		},
+	}
+	for _, o := range opts {
+		o(options)
+	}
+
 	body, err := json.Marshal(
 		&GetMediaBody{
-			StartSelector: StartSelector{
-				StartSelectorType: "NOW",
-				// TODO: continue using previous token
-			},
-			StreamName: c.streamID.StreamName(),
-			StreamARN:  c.streamID.StreamARN(),
+			StartSelector: options.startSelector,
+			StreamName:    c.streamID.StreamName(),
+			StreamARN:     c.streamID.StreamARN(),
 		})
 	if err != nil {
 		return nil, err
@@ -116,4 +122,36 @@ type GetMediaBody struct {
 	StartSelector StartSelector
 	StreamARN     *string `json:",omitempty"`
 	StreamName    *string `json:",omitempty"`
+}
+
+type GetMediaOptions struct {
+	startSelector StartSelector
+}
+
+type GetMediaOption func(*GetMediaOptions)
+
+func WithStartSelectorNow() GetMediaOption {
+	return func(options *GetMediaOptions) {
+		options.startSelector = StartSelector{
+			StartSelectorType: "NOW",
+		}
+	}
+}
+
+func WithStartSelectorProducerTimestamp(timestamp time.Time) GetMediaOption {
+	return func(options *GetMediaOptions) {
+		options.startSelector = StartSelector{
+			StartSelectorType: "PRODUCER_TIMESTAMP",
+			StartTimestamp:    int(timestamp.Unix()),
+		}
+	}
+}
+
+func WithStartSelectorContinuationToken(token string) GetMediaOption {
+	return func(options *GetMediaOptions) {
+		options.startSelector = StartSelector{
+			StartSelectorType: "CONTINUATION_TOKEN",
+			ContinuationToken: token,
+		}
+	}
 }

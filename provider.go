@@ -45,7 +45,30 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 	}, nil
 }
 
-func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent) error {
+type PutMediaOptions struct {
+	segmentUID             []byte
+	title                  string
+	fragmentTimecodeType   FragmentTimecodeType
+	producerStartTimestamp string
+}
+
+type PutMediaOption func(*PutMediaOptions)
+
+func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent, opts ...PutMediaOption) error {
+	segmentUuid, err := generateRandomUUID()
+	if err != nil {
+		return err
+	}
+	options := &PutMediaOptions{
+		segmentUID:             segmentUuid,
+		title:                  "kinesisvideomanager.Provider",
+		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
+		producerStartTimestamp: "0",
+	}
+	for _, o := range opts {
+		o(options)
+	}
+
 	chBlockChWithBaseTimecode := make(chan *BlockChWithBaseTimecode)
 	go func() {
 		defer close(chBlockChWithBaseTimecode)
@@ -87,10 +110,10 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 		}
 	}()
 
-	return p.putSegments(chBlockChWithBaseTimecode, chResp)
+	return p.putSegments(chBlockChWithBaseTimecode, chResp, options)
 }
 
-func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent) error {
+func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent, opts *PutMediaOptions) error {
 	defer func() {
 		close(chResp)
 	}()
@@ -107,7 +130,7 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 			return err
 		}
 		go func() {
-			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag)
+			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag, opts)
 			if err != nil {
 				chErr <- err
 				return
@@ -126,12 +149,7 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 	}
 }
 
-func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan *Tag) (io.ReadCloser, error) {
-	segmentUuid, err := generateRandomUUID()
-	if err != nil {
-		return nil, err
-	}
-
+func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan *Tag, opts *PutMediaOptions) (io.ReadCloser, error) {
 	data := struct {
 		Header  EBMLHeader   `ebml:"EBML"`
 		Segment SegmentWrite `ebml:",size=unknown"`
@@ -147,9 +165,9 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 		},
 		Segment: SegmentWrite{
 			Info: Info{
-				SegmentUID:    segmentUuid,
+				SegmentUID:    opts.segmentUID,
 				TimecodeScale: 1000000,
-				Title:         "kinesisvideomanager.Provider",
+				Title:         opts.title,
 				MuxingApp:     "kinesisvideomanager.Provider",
 				WritingApp:    "kinesisvideomanager.Provider",
 			},
@@ -186,8 +204,8 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 	if p.streamID.StreamARN() != nil {
 		req.Header.Set("x-amzn-stream-arn", *p.streamID.StreamARN())
 	}
-	req.Header.Set("x-amzn-fragment-timecode-type", "RELATIVE")
-	req.Header.Set("x-amzn-producer-start-timestamp", "0")
+	req.Header.Set("x-amzn-fragment-timecode-type", string(opts.fragmentTimecodeType))
+	req.Header.Set("x-amzn-producer-start-timestamp", opts.producerStartTimestamp)
 
 	_, err = p.signer.Presign(
 		req, bytes.NewReader([]byte{}),
@@ -210,4 +228,28 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 
 func generateRandomUUID() ([]byte, error) {
 	return uuid.New().MarshalBinary()
+}
+
+func WithSegmentUID(segmentUID []byte) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.segmentUID = segmentUID
+	}
+}
+
+func WithTitle(title string) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.title = title
+	}
+}
+
+func WithFragmentTimecodeType(fragmentTimecodeType FragmentTimecodeType) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.fragmentTimecodeType = fragmentTimecodeType
+	}
+}
+
+func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.producerStartTimestamp = producerStartTimestamp.Format(time.RFC3339)
+	}
 }
