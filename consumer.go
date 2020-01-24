@@ -44,7 +44,7 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opts ...GetMediaOption) (*Container, error) {
 	options := &GetMediaOptions{
 		startSelector: StartSelector{
-			StartSelectorType: "NOW",
+			StartSelectorType: StartSelectorTypeNow,
 		},
 	}
 	for _, o := range opts {
@@ -114,7 +114,7 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 type StartSelector struct {
 	AfterFragmentNumber string `json:",omitempty"`
 	ContinuationToken   string `json:",omitempty"`
-	StartSelectorType   string
+	StartSelectorType   StartSelectorType
 	StartTimestamp      int `json:",omitempty"`
 }
 
@@ -133,7 +133,7 @@ type GetMediaOption func(*GetMediaOptions)
 func WithStartSelectorNow() GetMediaOption {
 	return func(options *GetMediaOptions) {
 		options.startSelector = StartSelector{
-			StartSelectorType: "NOW",
+			StartSelectorType: StartSelectorTypeNow,
 		}
 	}
 }
@@ -141,7 +141,7 @@ func WithStartSelectorNow() GetMediaOption {
 func WithStartSelectorProducerTimestamp(timestamp time.Time) GetMediaOption {
 	return func(options *GetMediaOptions) {
 		options.startSelector = StartSelector{
-			StartSelectorType: "PRODUCER_TIMESTAMP",
+			StartSelectorType: StartSelectorTypeProducerTimestamp,
 			StartTimestamp:    int(timestamp.Unix()),
 		}
 	}
@@ -150,7 +150,7 @@ func WithStartSelectorProducerTimestamp(timestamp time.Time) GetMediaOption {
 func WithStartSelectorContinuationToken(token string) GetMediaOption {
 	return func(options *GetMediaOptions) {
 		options.startSelector = StartSelector{
-			StartSelectorType: "CONTINUATION_TOKEN",
+			StartSelectorType: StartSelectorTypeContinuationToken,
 			ContinuationToken: token,
 		}
 	}
