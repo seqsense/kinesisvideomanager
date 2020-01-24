@@ -1,4 +1,4 @@
-module github.com/seqsense/kinesis-test
+module github.com/seqsense/kinesisvideomanager
 
 go 1.12
 
