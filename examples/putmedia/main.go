@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 
 	"github.com/at-wat/ebml-go"
-	kvm "github.com/seqsense/kinesis-test"
+	kvm "github.com/seqsense/kinesisvideomanager"
 	"github.com/seqsense/sq-gst-go/appsink"
 	"github.com/seqsense/sq-gst-go/gstlaunch"
 )
@@ -25,7 +25,15 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pro, err := manager.Provider(kvm.StreamName(streamName))
+	pro, err := manager.Provider(kvm.StreamName(streamName), []kvm.TrackEntry{
+		{
+			TrackNumber: 1,
+			TrackUID:    123,
+			TrackType:   1,
+			CodecID:     "X_TEST",
+			Name:        "test_track",
+		},
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

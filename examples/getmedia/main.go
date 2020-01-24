@@ -5,7 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/session"
 
-	kvm "github.com/seqsense/kinesis-test"
+	kvm "github.com/seqsense/kinesisvideomanager"
 	"github.com/seqsense/sq-gst-go/appsrc"
 	"github.com/seqsense/sq-gst-go/gstlaunch"
 )
