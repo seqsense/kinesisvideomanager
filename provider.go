@@ -2,8 +2,10 @@ package kinesisvideomanager
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -132,6 +134,7 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 		}
 		go func() {
 			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag, opts)
+			defer res.Close()
 			if err != nil {
 				chErr <- err
 				return
@@ -219,6 +222,13 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 	res, err := p.httpCli.Do(req)
 	if err != nil {
 		return nil, err
+	}
+	if res.StatusCode != 200 {
+		body, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(fmt.Sprintf("%d: %s", res.StatusCode, string(body)))
 	}
 	err, ok := <-chErr
 	if !ok && err != nil {
