@@ -2,7 +2,6 @@ package kinesisvideomanager
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -228,7 +227,7 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 		if err != nil {
 			return nil, err
 		}
-		return nil, errors.New(fmt.Sprintf("%d: %s", res.StatusCode, string(body)))
+		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
 	err, ok := <-chErr
 	if !ok && err != nil {
