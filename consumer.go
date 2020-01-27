@@ -3,6 +3,8 @@ package kinesisvideomanager
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"time"
 
@@ -81,6 +83,13 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 		return nil, err
 	}
 	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		body, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
+	}
 
 	chBlock := make(chan ebml.Block)
 	chTimecode := make(chan uint64)
