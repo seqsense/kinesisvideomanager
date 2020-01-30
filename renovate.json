@@ -1,5 +1,23 @@
 {
-  "extends": [
-    "config:base"
-  ]
+    "extends": [
+        "config:base",
+        "schedule:nonOfficeHours"
+    ],
+    "reviewers": [
+        "team:cloud_backend"
+    ],
+    "postUpdateOptions": [
+        "gomodTidy"
+    ],
+    "packageRules": [
+        {
+            "packagePatterns": [
+                "^golang.org/x/"
+            ],
+            "schedule": [
+                "on the first day of the month"
+            ]
+        }
+    ],
+    "timezone": "Asia/Tokyo"
 }
