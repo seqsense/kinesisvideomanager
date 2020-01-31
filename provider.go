@@ -6,6 +6,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -52,9 +54,28 @@ type PutMediaOptions struct {
 	title                  string
 	fragmentTimecodeType   FragmentTimecodeType
 	producerStartTimestamp string
+	connectionTimeout      time.Duration
 }
 
 type PutMediaOption func(*PutMediaOptions)
+
+type connection struct {
+	*BlockChWithBaseTimecode
+	once   sync.Once
+	closed uint32
+}
+
+func (c *connection) close() {
+	c.once.Do(func() {
+		close(c.Block)
+		close(c.Tag)
+		atomic.AddUint32(&c.closed, 1)
+	})
+}
+
+func (c *connection) isClosed() bool {
+	return atomic.LoadUint32(&c.closed) > 0
+}
 
 func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent, opts ...PutMediaOption) error {
 	segmentUuid, err := generateRandomUUID()
@@ -66,6 +87,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 		title:                  "kinesisvideomanager.Provider",
 		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
 		producerStartTimestamp: "0",
+		connectionTimeout:      10 * time.Second,
 	}
 	for _, o := range opts {
 		o(options)
@@ -75,8 +97,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 	go func() {
 		defer close(chBlockChWithBaseTimecode)
 
-		var nextConn *BlockChWithBaseTimecode
-		var conn *BlockChWithBaseTimecode
+		var conn, nextConn *connection
 		for {
 			select {
 			case tag := <-chTag:
@@ -86,25 +107,33 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 					return
 				}
 				absTime := uint64(int64(bt.Timecode) + int64(bt.Block.Timecode))
-				if conn == nil || (nextConn == nil && conn.Timecode+8000 < absTime) {
+				if conn == nil || (conn.isClosed() && nextConn == nil) || (nextConn == nil && conn.Timecode+8000 < absTime) {
 					// Prepare next connection
 					chBlock := make(chan ebml.Block)
 					chTag := make(chan *Tag)
-					nextConn = &BlockChWithBaseTimecode{
-						Timecode: absTime + 1000,
-						Block:    chBlock,
-						Tag:      chTag,
+					nextConn = &connection{
+						BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
+							Timecode: absTime + 1000,
+							Block:    chBlock,
+							Tag:      chTag,
+						},
 					}
-					chBlockChWithBaseTimecode <- nextConn
+					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
-				if conn == nil || conn.Timecode+9000 < absTime {
+				if conn == nil || conn.isClosed() || conn.Timecode+9000 < absTime {
 					// Switch to next connection
 					if conn != nil {
-						close(conn.Block)
-						close(conn.Tag)
+						conn.close()
 					}
 					conn = nextConn
 					nextConn = nil
+
+					go func(c *connection) {
+						select {
+						case <-time.After(options.connectionTimeout):
+							c.close()
+						}
+					}(conn)
 				}
 				bt.Block.Timecode = int16(absTime - conn.Timecode)
 				conn.Block <- bt.Block
@@ -265,5 +294,11 @@ func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption
 			producerStartTimestamp.Unix(),
 			producerStartTimestamp.Nanosecond()/1000000,
 		)
+	}
+}
+
+func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.connectionTimeout = timeout
 	}
 }
