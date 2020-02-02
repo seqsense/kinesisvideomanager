@@ -133,6 +133,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 				// Forcefully switch to next connection
 				conn.close()
 				conn = nextConn
+				if conn != nil {
+					conn.timeout = time.After(options.connectionTimeout)
+				}
 				nextConn = nil
 			}
 		}
