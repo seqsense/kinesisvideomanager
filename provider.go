@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -61,20 +60,15 @@ type PutMediaOption func(*PutMediaOptions)
 
 type connection struct {
 	*BlockChWithBaseTimecode
-	once   sync.Once
-	closed uint32
+	once    sync.Once
+	timeout <-chan time.Time
 }
 
 func (c *connection) close() {
 	c.once.Do(func() {
 		close(c.Block)
 		close(c.Tag)
-		atomic.AddUint32(&c.closed, 1)
 	})
-}
-
-func (c *connection) isClosed() bool {
-	return atomic.LoadUint32(&c.closed) > 0
 }
 
 func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent, opts ...PutMediaOption) error {
@@ -99,6 +93,10 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 
 		var conn, nextConn *connection
 		for {
+			var timeout <-chan time.Time
+			if conn != nil {
+				timeout = conn.timeout
+			}
 			select {
 			case tag := <-chTag:
 				conn.Tag <- tag
@@ -107,7 +105,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 					return
 				}
 				absTime := uint64(int64(bt.Timecode) + int64(bt.Block.Timecode))
-				if conn == nil || (conn.isClosed() && nextConn == nil) || (nextConn == nil && conn.Timecode+8000 < absTime) {
+				if conn == nil || (nextConn == nil && conn.Timecode+8000 < absTime) {
 					// Prepare next connection
 					chBlock := make(chan ebml.Block)
 					chTag := make(chan *Tag)
@@ -120,23 +118,22 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 					}
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
-				if conn == nil || conn.isClosed() || conn.Timecode+9000 < absTime {
+				if conn == nil || conn.Timecode+9000 < absTime {
 					// Switch to next connection
 					if conn != nil {
 						conn.close()
 					}
 					conn = nextConn
+					conn.timeout = time.After(options.connectionTimeout)
 					nextConn = nil
-
-					go func(c *connection) {
-						select {
-						case <-time.After(options.connectionTimeout):
-							c.close()
-						}
-					}(conn)
 				}
 				bt.Block.Timecode = int16(absTime - conn.Timecode)
 				conn.Block <- bt.Block
+			case <-timeout:
+				// Forcefully switch to next connection
+				conn.close()
+				conn = nextConn
+				nextConn = nil
 			}
 		}
 	}()
