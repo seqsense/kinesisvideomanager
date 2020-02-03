@@ -9,6 +9,8 @@ type FragmentEvent struct {
 	EventType        string
 	FragmentTimecode uint64
 	FragmentNumber   string // 158-bit number, handle as string
+	ErrorId          int
+	ErrorCode        string
 }
 
 func parseFragmentEvent(r io.Reader) ([]FragmentEvent, error) {
