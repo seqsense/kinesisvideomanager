@@ -162,7 +162,9 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 		}
 		go func() {
 			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag, opts)
-			defer res.Close()
+			if res != nil {
+				defer res.Close()
+			}
 			if err != nil {
 				chErr <- err
 				return
