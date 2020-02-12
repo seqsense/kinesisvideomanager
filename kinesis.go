@@ -3,7 +3,6 @@ package kinesisvideomanager
 import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/aws/aws-sdk-go/service/kinesisvideo"
 )
@@ -17,20 +16,9 @@ type Client struct {
 func New(sess client.ConfigProvider, cfgs ...*aws.Config) (*Client, error) {
 	cliConfig := sess.ClientConfig("kinesisvideo")
 
-	cred, err := cliConfig.Config.Credentials.Get()
-	if err != nil {
-		return nil, err
-	}
-
 	return &Client{
-		kv: kinesisvideo.New(sess, cfgs...),
-		signer: v4.NewSigner(
-			credentials.NewStaticCredentials(
-				cred.AccessKeyID,
-				cred.SecretAccessKey,
-				cred.SessionToken,
-			),
-		),
+		kv:        kinesisvideo.New(sess, cfgs...),
+		signer:    v4.NewSigner(cliConfig.Config.Credentials),
 		cliConfig: &cliConfig,
 	}, nil
 }
