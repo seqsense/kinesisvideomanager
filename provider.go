@@ -94,6 +94,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 			if conn != nil {
 				conn.close()
 			}
+			if nextConn != nil {
+				nextConn.close()
+			}
 			close(chBlockChWithBaseTimecode)
 		}()
 
@@ -110,7 +113,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 					return
 				}
 				absTime := uint64(int64(bt.Timecode) + int64(bt.Block.Timecode))
-				if conn == nil || (nextConn == nil && conn.Timecode+8000 < absTime) {
+				if conn == nil || (nextConn == nil && conn.Timecode+1000 < absTime) {
 					// Prepare next connection
 					chBlock := make(chan ebml.Block)
 					chTag := make(chan *Tag)
@@ -121,6 +124,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 							Tag:      chTag,
 						},
 					}
+					println("					// Prepare next connection")
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
 				if conn == nil || conn.Timecode+9000 < absTime {
