@@ -124,7 +124,6 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 							Tag:      chTag,
 						},
 					}
-					println("					// Prepare next connection")
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
 				if conn == nil || conn.Timecode+9000 < absTime {
