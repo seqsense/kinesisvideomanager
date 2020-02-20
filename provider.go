@@ -89,9 +89,14 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 
 	chBlockChWithBaseTimecode := make(chan *BlockChWithBaseTimecode)
 	go func() {
-		defer close(chBlockChWithBaseTimecode)
-
 		var conn, nextConn *connection
+		defer func() {
+			if conn != nil {
+				conn.close()
+			}
+			close(chBlockChWithBaseTimecode)
+		}()
+
 		for {
 			var timeout <-chan time.Time
 			if conn != nil {
@@ -102,9 +107,6 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 				conn.Tag <- tag
 			case bt, ok := <-ch:
 				if !ok {
-					if conn != nil {
-						conn.close()
-					}
 					return
 				}
 				absTime := uint64(int64(bt.Timecode) + int64(bt.Block.Timecode))
