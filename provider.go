@@ -102,6 +102,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 				conn.Tag <- tag
 			case bt, ok := <-ch:
 				if !ok {
+					if conn != nil {
+						conn.close()
+					}
 					return
 				}
 				absTime := uint64(int64(bt.Timecode) + int64(bt.Block.Timecode))
@@ -145,7 +148,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 }
 
 func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent, opts *PutMediaOptions) error {
+	var wg sync.WaitGroup
 	defer func() {
+		wg.Wait()
 		close(chResp)
 	}()
 	chErr := make(chan error)
@@ -160,7 +165,11 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 		case err := <-chErr:
 			return err
 		}
+		wg.Add(1)
 		go func() {
+			defer func() {
+				wg.Done()
+			}()
 			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag, opts)
 			if res != nil {
 				defer res.Close()
