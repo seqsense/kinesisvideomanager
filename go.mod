@@ -1,6 +1,6 @@
 module github.com/seqsense/kinesisvideomanager
 
-go 1.12
+go 1.14
 
 require (
 	github.com/at-wat/ebml-go v0.10.0
