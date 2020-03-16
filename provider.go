@@ -52,7 +52,7 @@ type PutMediaOptions struct {
 	segmentUID             []byte
 	title                  string
 	fragmentTimecodeType   FragmentTimecodeType
-	producerStartTimestamp string
+	producerStartTimestamp func() time.Time
 	connectionTimeout      time.Duration
 }
 
@@ -80,7 +80,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 		segmentUID:             segmentUuid,
 		title:                  "kinesisvideomanager.Provider",
 		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
-		producerStartTimestamp: "0",
+		producerStartTimestamp: func() time.Time { return time.Unix(0, 0) },
 		connectionTimeout:      10 * time.Second,
 	}
 	for _, o := range opts {
@@ -253,7 +253,7 @@ func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan 
 		req.Header.Set("x-amzn-stream-arn", *p.streamID.StreamARN())
 	}
 	req.Header.Set("x-amzn-fragment-timecode-type", string(opts.fragmentTimecodeType))
-	req.Header.Set("x-amzn-producer-start-timestamp", opts.producerStartTimestamp)
+	req.Header.Set("x-amzn-producer-start-timestamp", toProducerTimestamp(opts.producerStartTimestamp()))
 
 	_, err = p.signer.Presign(
 		req, bytes.NewReader([]byte{}),
@@ -303,18 +303,16 @@ func WithFragmentTimecodeType(fragmentTimecodeType FragmentTimecodeType) PutMedi
 	}
 }
 
-func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption {
+func WithProducerStartTimestampNow() PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.producerStartTimestamp = fmt.Sprintf(
-			"%d.%d",
-			producerStartTimestamp.Unix(),
-			producerStartTimestamp.Nanosecond()/1000000,
-		)
+		p.producerStartTimestamp = func() time.Time {
+			return time.Now()
+		}
 	}
 }
 
-func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
+func WithProducerStartTimestamp(f func() time.Time) PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.connectionTimeout = timeout
+		p.producerStartTimestamp = f
 	}
 }
