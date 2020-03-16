@@ -305,11 +305,7 @@ func WithFragmentTimecodeType(fragmentTimecodeType FragmentTimecodeType) PutMedi
 
 func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.producerStartTimestamp = fmt.Sprintf(
-			"%d.%d",
-			producerStartTimestamp.Unix(),
-			producerStartTimestamp.Nanosecond()/1000000,
-		)
+		p.producerStartTimestamp = toTimestampString(producerStartTimestamp)
 	}
 }
 
