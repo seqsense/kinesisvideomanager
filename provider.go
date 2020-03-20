@@ -317,7 +317,7 @@ func WithFragmentTimecodeType(fragmentTimecodeType FragmentTimecodeType) PutMedi
 
 func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.producerStartTimestamp = toTimestampString(producerStartTimestamp)
+		p.producerStartTimestamp = ToTimestamp(producerStartTimestamp)
 	}
 }
 
