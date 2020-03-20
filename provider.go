@@ -54,6 +54,7 @@ type PutMediaOptions struct {
 	fragmentTimecodeType   FragmentTimecodeType
 	producerStartTimestamp string
 	connectionTimeout      time.Duration
+	tags                   func() []SimpleTag
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -69,17 +70,22 @@ func (c *connection) initialize(firstBlock *BlockWithBaseTimecode, opts *PutMedi
 	c.baseTimecode = uint64(firstBlock.AbsTimecode())
 	c.Timecode <- c.baseTimecode
 	close(c.Timecode)
+
+	if opts.tags != nil {
+		c.Tag <- &Tag{SimpleTag: opts.tags()}
+	}
+	close(c.Tag)
+
 	c.timeout = time.After(opts.connectionTimeout)
 }
 
 func (c *connection) close() {
 	c.once.Do(func() {
 		close(c.Block)
-		close(c.Tag)
 	})
 }
 
-func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chResp chan FragmentEvent, opts ...PutMediaOption) error {
+func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan FragmentEvent, opts ...PutMediaOption) error {
 	segmentUuid, err := generateRandomUUID()
 	if err != nil {
 		return err
@@ -115,8 +121,6 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 				timeout = conn.timeout
 			}
 			select {
-			case tag := <-chTag:
-				conn.Tag <- tag
 			case bt, ok := <-ch:
 				if !ok {
 					return
@@ -128,7 +132,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 						BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
 							Timecode: make(chan uint64, 1),
 							Block:    make(chan ebml.Block),
-							Tag:      make(chan *Tag),
+							Tag:      make(chan *Tag, 1),
 						},
 					}
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
@@ -320,5 +324,11 @@ func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption
 func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.connectionTimeout = timeout
+	}
+}
+
+func WithTags(tags func() []SimpleTag) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.tags = tags
 	}
 }

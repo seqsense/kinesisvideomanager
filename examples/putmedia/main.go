@@ -64,7 +64,6 @@ func main() {
 
 	chResp := make(chan kvm.FragmentEvent, 10)
 	ch := make(chan *kvm.BlockWithBaseTimecode, 10)
-	chTag := make(chan *kvm.Tag, 10)
 	start := time.Now()
 
 	as := appsink.New(sink, func(b []byte, n int) {
@@ -92,7 +91,7 @@ func main() {
 		}
 	}()
 
-	err = pro.PutMedia(ch, chTag, chResp)
+	err = pro.PutMedia(ch, chResp)
 	if err != nil {
 		log.Printf("failed: %v", err)
 	}
