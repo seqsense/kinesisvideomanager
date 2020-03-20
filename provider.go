@@ -124,14 +124,11 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 				absTime := uint64(bt.AbsTimecode())
 				if conn == nil || (nextConn == nil && conn.baseTimecode+8000 < absTime) {
 					// Prepare next connection
-					chTimecode := make(chan uint64, 1)
-					chBlock := make(chan ebml.Block)
-					chTag := make(chan *Tag)
 					nextConn = &connection{
 						BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
-							Timecode: chTimecode,
-							Block:    chBlock,
-							Tag:      chTag,
+							Timecode: make(chan uint64, 1),
+							Block:    make(chan ebml.Block),
+							Tag:      make(chan *Tag),
 						},
 					}
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
