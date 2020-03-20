@@ -95,7 +95,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		title:                  "kinesisvideomanager.Provider",
 		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
 		producerStartTimestamp: "0",
-		connectionTimeout:      10 * time.Second,
+		connectionTimeout:      15 * time.Second,
 	}
 	for _, o := range opts {
 		o(options)
