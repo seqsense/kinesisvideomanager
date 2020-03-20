@@ -60,8 +60,16 @@ type PutMediaOption func(*PutMediaOptions)
 
 type connection struct {
 	*BlockChWithBaseTimecode
-	once    sync.Once
-	timeout <-chan time.Time
+	baseTimecode uint64
+	once         sync.Once
+	timeout      <-chan time.Time
+}
+
+func (c *connection) initialize(firstBlock *BlockWithBaseTimecode, opts *PutMediaOptions) {
+	c.baseTimecode = uint64(firstBlock.AbsTimecode())
+	c.Timecode <- c.baseTimecode
+	close(c.Timecode)
+	c.timeout = time.After(opts.connectionTimeout)
 }
 
 func (c *connection) close() {
@@ -100,6 +108,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 			close(chBlockChWithBaseTimecode)
 		}()
 
+		var lastBlock *BlockWithBaseTimecode
 		for {
 			var timeout <-chan time.Time
 			if conn != nil {
@@ -112,37 +121,39 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, chR
 				if !ok {
 					return
 				}
-				absTime := uint64(int64(bt.Timecode) + int64(bt.Block.Timecode))
-				if conn == nil || (nextConn == nil && conn.Timecode+8000 < absTime) {
+				absTime := uint64(bt.AbsTimecode())
+				if conn == nil || (nextConn == nil && conn.baseTimecode+8000 < absTime) {
 					// Prepare next connection
+					chTimecode := make(chan uint64, 1)
 					chBlock := make(chan ebml.Block)
 					chTag := make(chan *Tag)
 					nextConn = &connection{
 						BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
-							Timecode: absTime + 1000,
+							Timecode: chTimecode,
 							Block:    chBlock,
 							Tag:      chTag,
 						},
 					}
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
-				if conn == nil || conn.Timecode+9000 < absTime {
+				if conn == nil || conn.baseTimecode+9000 < absTime {
 					// Switch to next connection
 					if conn != nil {
 						conn.close()
 					}
 					conn = nextConn
-					conn.timeout = time.After(options.connectionTimeout)
+					conn.initialize(bt, options)
 					nextConn = nil
 				}
-				bt.Block.Timecode = int16(absTime - conn.Timecode)
+				bt.Block.Timecode = int16(absTime - conn.baseTimecode)
 				conn.Block <- bt.Block
+				lastBlock = bt
 			case <-timeout:
 				// Forcefully switch to next connection
 				conn.close()
 				conn = nextConn
 				if conn != nil {
-					conn.timeout = time.After(options.connectionTimeout)
+					conn.initialize(lastBlock, options)
 				}
 				nextConn = nil
 			}
@@ -197,7 +208,7 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 	}
 }
 
-func (p *Provider) putMedia(baseTimecode uint64, ch chan ebml.Block, chTag chan *Tag, opts *PutMediaOptions) (io.ReadCloser, error) {
+func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag chan *Tag, opts *PutMediaOptions) (io.ReadCloser, error) {
 	data := struct {
 		Header  EBMLHeader   `ebml:"EBML"`
 		Segment SegmentWrite `ebml:",size=unknown"`
