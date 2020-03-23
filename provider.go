@@ -19,6 +19,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const TimecodeScale = 1000000
+
 type Provider struct {
 	streamID  StreamID
 	endpoint  string
@@ -95,7 +97,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		title:                  "kinesisvideomanager.Provider",
 		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
 		producerStartTimestamp: "0",
-		connectionTimeout:      10 * time.Second,
+		connectionTimeout:      15 * time.Second,
 	}
 	for _, o := range opts {
 		o(options)
@@ -226,7 +228,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		Segment: SegmentWrite{
 			Info: Info{
 				SegmentUID:    opts.segmentUID,
-				TimecodeScale: 1000000,
+				TimecodeScale: TimecodeScale,
 				Title:         opts.title,
 				MuxingApp:     "kinesisvideomanager.Provider",
 				WritingApp:    "kinesisvideomanager.Provider",
