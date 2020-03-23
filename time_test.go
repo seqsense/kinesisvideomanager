@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func Test_toTimestampString(t *testing.T) {
+func Test_ToTimestamp(t *testing.T) {
 	testCases := map[string]struct {
 		input    time.Time
 		expected string
@@ -29,7 +29,7 @@ func Test_toTimestampString(t *testing.T) {
 	}
 	for n, c := range testCases {
 		t.Run(n, func(t *testing.T) {
-			ts := toTimestampString(c.input)
+			ts := ToTimestamp(c.input)
 			if ts != c.expected {
 				t.Errorf("Expected timestamp: '%v', got: '%v'", c.expected, ts)
 			}
