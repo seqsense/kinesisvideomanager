@@ -43,7 +43,7 @@ type Cluster struct {
 	SimpleBlock chan ebml.Block
 }
 type ClusterWrite struct {
-	Timecode    uint64
+	Timecode    chan uint64
 	Position    uint64 `ebml:",omitempty"`
 	SimpleBlock chan ebml.Block
 }
