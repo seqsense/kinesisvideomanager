@@ -85,13 +85,13 @@ func (c *connection) close() {
 	c.once.Do(func() {
 		// Ensure close channels even if the connection is not initialized.
 		select {
-		case _ = <-c.Timecode:
+		case <-c.Timecode:
 		default:
 			close(c.Timecode)
 		}
 
 		select {
-		case _ = <-c.Tag:
+		case <-c.Tag:
 		default:
 			close(c.Tag)
 		}
