@@ -83,6 +83,19 @@ func (c *connection) initialize(firstBlock *BlockWithBaseTimecode, opts *PutMedi
 
 func (c *connection) close() {
 	c.once.Do(func() {
+		// Ensure close channels even if the connection is not initialized.
+		select {
+		case _ = <-c.Timecode:
+		default:
+			close(c.Timecode)
+		}
+
+		select {
+		case _ = <-c.Tag:
+		default:
+			close(c.Tag)
+		}
+
 		close(c.Block)
 	})
 }
