@@ -63,40 +63,36 @@ type PutMediaOption func(*PutMediaOptions)
 
 type connection struct {
 	*BlockChWithBaseTimecode
-	baseTimecode uint64
-	once         sync.Once
-	timeout      <-chan time.Time
+	baseTimecode    uint64
+	onceClose       sync.Once
+	onceSetTimecode sync.Once
+	timeout         <-chan time.Time
 }
 
 func (c *connection) initialize(firstBlock *BlockWithBaseTimecode, opts *PutMediaOptions) {
-	c.baseTimecode = uint64(firstBlock.AbsTimecode())
-	c.Timecode <- c.baseTimecode
-	close(c.Timecode)
+	c.setBaseTimecode(uint64(firstBlock.AbsTimecode()))
 
 	if opts.tags != nil {
 		c.Tag <- &Tag{SimpleTag: opts.tags()}
 	}
-	close(c.Tag)
 
 	c.timeout = time.After(opts.connectionTimeout)
 }
 
+func (c *connection) setBaseTimecode(baseTimecode uint64) {
+	c.onceSetTimecode.Do(func() {
+		c.baseTimecode = baseTimecode
+		c.Timecode <- c.baseTimecode
+		close(c.Timecode)
+	})
+}
+
 func (c *connection) close() {
-	c.once.Do(func() {
-		// Ensure close channels even if the connection is not initialized.
-		select {
-		case <-c.Timecode:
-		default:
-			close(c.Timecode)
-		}
-
-		select {
-		case <-c.Tag:
-		default:
-			close(c.Tag)
-		}
-
+	c.onceClose.Do(func() {
+		// Ensure Timecode channel closed
+		c.setBaseTimecode(0)
 		close(c.Block)
+		close(c.Tag)
 	})
 }
 
