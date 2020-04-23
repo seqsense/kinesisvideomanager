@@ -1,8 +1,24 @@
 package kinesisvideomanager
 
 import (
+	"time"
+
 	"github.com/at-wat/ebml-go"
 )
+
+type Fragment []*BlockWithMetadata
+
+type BlockWithMetadata struct {
+	*BlockWithBaseTimecode
+	*FragmentMetadata
+}
+
+type FragmentMetadata struct {
+	FragmentNumber    string
+	ProducerTimestamp time.Time
+	ServerTimestamp   time.Time
+	Tags              map[string]SimpleTag
+}
 
 type BlockWithBaseTimecode struct {
 	Timecode uint64
