@@ -61,7 +61,7 @@ func New(streamID kvm.StreamID, sess client.ConfigProvider, cfgs ...*aws.Config)
 	}, nil
 }
 
-func (c *Client) ListFragments(opts ...ListFragmentsOption) (*listFragmentsOutput, error) {
+func (c *Client) ListFragments(opts ...ListFragmentsOption) (*ListFragmentsOutput, error) {
 	input := &kvam.ListFragmentsInput{
 		StreamName: c.streamID.StreamName(),
 	}
@@ -79,7 +79,7 @@ func (c *Client) ListFragments(opts ...ListFragmentsOption) (*listFragmentsOutpu
 	 * see: https://docs.aws.amazon.com/kinesisvideostreams/latest/dg/API_reader_ListFragments.html#API_reader_ListFragments_ResponseElements
 	 *  > Results are in no specific order, even across pages.
 	 */
-	ret := listFragmentsOutput{ListFragmentsOutput: out}
+	ret := ListFragmentsOutput{ListFragmentsOutput: out}
 	ret.Sort()
 	return &ret, nil
 }

@@ -6,29 +6,29 @@ import (
 	kvam "github.com/aws/aws-sdk-go/service/kinesisvideoarchivedmedia"
 )
 
-type listFragmentsOutput struct {
+type ListFragmentsOutput struct {
 	*kvam.ListFragmentsOutput
 }
 
 type FragmentIDs []*string
 
-func (l *listFragmentsOutput) Sort() {
+func (l *ListFragmentsOutput) Sort() {
 	sort.Sort(l)
 }
 
-func (l *listFragmentsOutput) Len() int {
+func (l *ListFragmentsOutput) Len() int {
 	return len(l.Fragments)
 }
 
-func (l *listFragmentsOutput) Swap(i, j int) {
+func (l *ListFragmentsOutput) Swap(i, j int) {
 	l.Fragments[i], l.Fragments[j] = l.Fragments[j], l.Fragments[i]
 }
 
-func (l *listFragmentsOutput) Less(i, j int) bool {
+func (l *ListFragmentsOutput) Less(i, j int) bool {
 	return *l.Fragments[i].FragmentNumber < *l.Fragments[j].FragmentNumber
 }
 
-func (l *listFragmentsOutput) FragmentIDs() FragmentIDs {
+func (l *ListFragmentsOutput) FragmentIDs() FragmentIDs {
 	var ret FragmentIDs
 	for _, f := range l.Fragments {
 		ret = append(ret, f.FragmentNumber)
