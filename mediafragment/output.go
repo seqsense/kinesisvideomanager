@@ -12,6 +12,14 @@ type ListFragmentsOutput struct {
 
 type FragmentIDs []*string
 
+func NewFragmentIDs(ids ...string) FragmentIDs {
+	var ret FragmentIDs
+	for _, id := range ids {
+		ret = append(ret, &id)
+	}
+	return ret
+}
+
 func (l *ListFragmentsOutput) Sort() {
 	sort.Sort(l)
 }
