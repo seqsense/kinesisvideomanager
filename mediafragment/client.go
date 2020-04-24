@@ -1,4 +1,4 @@
-package getmediaforfragmentlist
+package mediafragment
 
 import (
 	"fmt"
