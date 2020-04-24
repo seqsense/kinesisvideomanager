@@ -10,6 +10,8 @@ type listFragmentsOutput struct {
 	*kvam.ListFragmentsOutput
 }
 
+type FragmentIDs []*string
+
 func (l *listFragmentsOutput) Sort() {
 	sort.Sort(l)
 }
@@ -26,8 +28,8 @@ func (l *listFragmentsOutput) Less(i, j int) bool {
 	return *l.Fragments[i].FragmentNumber < *l.Fragments[j].FragmentNumber
 }
 
-func (l *listFragmentsOutput) FragmentList() []*string {
-	var ret []*string
+func (l *listFragmentsOutput) FragmentIDs() FragmentIDs {
+	var ret FragmentIDs
 	for _, f := range l.Fragments {
 		ret = append(ret, f.FragmentNumber)
 	}

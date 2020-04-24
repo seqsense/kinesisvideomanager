@@ -84,7 +84,7 @@ func (c *Client) ListFragments(opts ...ListFragmentsOption) (*listFragmentsOutpu
 	return &ret, nil
 }
 
-func (c *Client) GetMediaForFragmentList(fragments []*string, handler func(kvm.Fragment), errHandler func(error)) error {
+func (c *Client) GetMediaForFragmentList(fragments FragmentIDs, handler func(kvm.Fragment), errHandler func(error)) error {
 	req, out := c.clientGetMediaForFragmentList.GetMediaForFragmentListRequest(&kvam.GetMediaForFragmentListInput{
 		Fragments:  fragments,
 		StreamName: c.streamID.StreamName(),
