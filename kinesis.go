@@ -52,3 +52,13 @@ func (s *streamID) StreamARN() *string {
 func (s *streamID) StreamName() *string {
 	return s.name
 }
+
+func (s *streamID) String() string {
+	if s.name != nil {
+		return *s.name
+	}
+	if s.arn != nil {
+		return *s.arn
+	}
+	return "invalid_stream_id"
+}
