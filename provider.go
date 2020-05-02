@@ -137,7 +137,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 					return
 				}
 				absTime := uint64(bt.AbsTimecode())
-				if conn == nil || (nextConn == nil && conn.baseTimecode+8000 < absTime) {
+				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
 					// Prepare next connection
 					nextConn = &connection{
 						BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
@@ -148,7 +148,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 					}
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
-				if conn == nil || conn.baseTimecode+9000 < absTime {
+				if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
 					// Switch to next connection
 					if conn != nil {
 						conn.close()
