@@ -70,8 +70,8 @@ type connection struct {
 	timeout         <-chan time.Time
 }
 
-func (c *connection) initialize(firstBlock *BlockWithBaseTimecode, opts *PutMediaOptions) {
-	c.setBaseTimecode(uint64(firstBlock.AbsTimecode()))
+func (c *connection) initialize(baseTimecode uint64, opts *PutMediaOptions) {
+	c.setBaseTimecode(baseTimecode)
 
 	if opts.tags != nil {
 		c.Tag <- &Tag{SimpleTag: opts.tags()}
@@ -126,7 +126,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 			close(chBlockChWithBaseTimecode)
 		}()
 
-		var lastBlock *BlockWithBaseTimecode
+		lastAbsTime := uint64(0)
 		for {
 			var timeout <-chan time.Time
 			if conn != nil {
@@ -137,17 +137,18 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				if !ok {
 					return
 				}
-				if lastBlock != nil {
-					diff := bt.AbsTimecode() - lastBlock.AbsTimecode()
+				absTime := uint64(bt.AbsTimecode())
+				if lastAbsTime != 0 {
+					diff := int64(absTime - lastAbsTime)
 					if diff < 0 || diff > math.MaxInt16 {
 						Logger().Warnf(
 							"Invalid timecode (streamID:%s timecode:%d last:%d diff:%d)",
-							p.streamID, bt.AbsTimecode(), lastBlock.AbsTimecode(), diff,
+							p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
 						)
 						continue
 					}
 				}
-				absTime := uint64(bt.AbsTimecode())
+
 				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
 					// Prepare next connection
 					nextConn = &connection{
@@ -165,20 +166,21 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 						conn.close()
 					}
 					conn = nextConn
-					conn.initialize(bt, options)
+					conn.initialize(absTime, options)
 					nextConn = nil
 				}
 				bt.Block.Timecode = int16(absTime - conn.baseTimecode)
 				conn.Block <- bt.Block
-				lastBlock = bt
+				lastAbsTime = absTime
 			case <-timeout:
-				// Forcefully switch to next connection
+				// Forcefully close connections
 				conn.close()
-				conn = nextConn
-				if conn != nil {
-					conn.initialize(lastBlock, options)
+				conn = nil
+				if nextConn != nil {
+					nextConn.close()
+					nextConn = nil
 				}
-				nextConn = nil
+				lastAbsTime = 0
 			}
 		}
 	}()
