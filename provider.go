@@ -140,7 +140,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				if lastBlock != nil {
 					diff := bt.AbsTimecode() - lastBlock.AbsTimecode()
 					if diff < 0 || diff > math.MaxInt16 {
-						GetLogger().Warnf(
+						Logger().Warnf(
 							"Invalid timecode (streamID:%s timecode:%d last:%d diff:%d)",
 							p.streamID, bt.AbsTimecode(), lastBlock.AbsTimecode(), diff,
 						)

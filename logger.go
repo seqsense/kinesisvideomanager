@@ -1,6 +1,6 @@
 package kinesisvideomanager
 
-type Logger interface {
+type LoggerIF interface {
 	Debug(args ...interface{})
 	Debugf(format string, args ...interface{})
 	Info(args ...interface{})
@@ -11,13 +11,13 @@ type Logger interface {
 	Errorf(format string, args ...interface{})
 }
 
-var logger Logger = &noopLogger{}
+var logger LoggerIF = &noopLogger{}
 
-func SetLogger(l Logger) {
+func SetLogger(l LoggerIF) {
 	logger = l
 }
 
-func GetLogger() Logger {
+func Logger() LoggerIF {
 	return logger
 }
 
