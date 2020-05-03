@@ -150,7 +150,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				}
 
 				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
-					// Prepare next connection
+					Logger().Debugf("Prepare next connection (streamID:%s)", p.streamID)
 					nextConn = &connection{
 						BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
 							Timecode: make(chan uint64, 1),
@@ -161,7 +161,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
 				if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
-					// Switch to next connection
+					Logger().Debugf("Switch to next connection (streamID:%s absTime:%d)", p.streamID, absTime)
 					if conn != nil {
 						conn.close()
 					}
@@ -173,7 +173,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				conn.Block <- bt.Block
 				lastAbsTime = absTime
 			case <-timeout:
-				// Forcefully close connections
+				Logger().Warnf("Connection timed out, clean connections (streamID:%s)", p.streamID)
 				conn.close()
 				conn = nil
 				if nextConn != nil {
