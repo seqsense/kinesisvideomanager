@@ -58,6 +58,10 @@ func Test_ParseTimestamp(t *testing.T) {
 			"0.123",
 			time.Unix(0, 123*int64(time.Millisecond)),
 		},
+		"ConsiderFloatingPointError": {
+			"1000000000.607",
+			time.Unix(1000000000, 607*int64(time.Millisecond)),
+		},
 	}
 	for n, c := range testCases {
 		t.Run(n, func(t *testing.T) {

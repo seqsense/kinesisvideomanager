@@ -2,9 +2,11 @@ package kinesisvideomanager
 
 import (
 	"fmt"
-	"strconv"
+	"math/big"
 	"time"
 )
+
+var durationSecond = new(big.Rat).SetInt64(int64(time.Second))
 
 func ToTimestamp(t time.Time) string {
 	unix := fmt.Sprintf("%d", t.Unix())
@@ -15,9 +17,13 @@ func ToTimestamp(t time.Time) string {
 }
 
 func ParseTimestamp(timestamp string) (time.Time, error) {
-	unix, err := strconv.ParseFloat(timestamp, 64)
-	if err != nil {
-		return time.Time{}, err
+	seconds, ok := new(big.Rat).SetString(timestamp)
+	if !ok {
+		return time.Time{}, fmt.Errorf("failed to parse timestamp: %s", timestamp)
 	}
-	return time.Unix(0, int64(unix*float64(time.Second))), nil
+	nanoSec := new(big.Rat).Mul(seconds, durationSecond)
+	if !nanoSec.IsInt() {
+		return time.Time{}, fmt.Errorf("timestamp might not be Unix time: %s", timestamp)
+	}
+	return time.Unix(0, nanoSec.Num().Int64()), nil
 }
