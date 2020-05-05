@@ -16,7 +16,7 @@ import (
 
 var testData = [][]byte{{0x01, 0x02}}
 
-func Test_Provider(t *testing.T) {
+func TestProvider(t *testing.T) {
 	server := NewKinesisVideoServer()
 	defer server.Close()
 

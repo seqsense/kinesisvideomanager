@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 )
 
-func Test_Consumer(t *testing.T) {
+func TestConsumer(t *testing.T) {
 	server := NewKinesisVideoServer()
 	defer server.Close()
 
