@@ -44,6 +44,11 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 }
 
 func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opts ...GetMediaOption) (*Container, error) {
+	defer func() {
+		close(ch)
+		close(chTag)
+	}()
+
 	options := &GetMediaOptions{
 		startSelector: StartSelector{
 			StartSelectorType: StartSelectorTypeNow,
