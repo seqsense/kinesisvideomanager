@@ -84,11 +84,9 @@ func TestConsumer(t *testing.T) {
 		t.Fatalf("Failed to run GetMedia: %v", err)
 	}
 
-	select {
-	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			t.Fatalf("PutMedia timed out")
-		}
+	<-ctx.Done()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatalf("GetMedia timed out")
 	}
 
 	// check only second fragment was loaded

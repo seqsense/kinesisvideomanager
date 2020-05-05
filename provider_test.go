@@ -86,11 +86,9 @@ func TestProvider(t *testing.T) {
 		t.Fatalf("Failed to run PutMedia: %v", err)
 	}
 
-	select {
-	case <-ctx.Done():
-		if ctx.Err() == context.DeadlineExceeded {
-			t.Fatalf("PutMedia timed out")
-		}
+	<-ctx.Done()
+	if ctx.Err() == context.DeadlineExceeded {
+		t.Fatalf("PutMedia timed out")
 	}
 
 	expected := []FragmentTest{
