@@ -127,6 +127,15 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		}()
 
 		lastAbsTime := uint64(0)
+		cleanConnections := func() {
+			conn.close()
+			conn = nil
+			if nextConn != nil {
+				nextConn.close()
+				nextConn = nil
+			}
+			lastAbsTime = 0
+		}
 		for {
 			var timeout <-chan time.Time
 			if conn != nil {
@@ -170,17 +179,16 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 					nextConn = nil
 				}
 				bt.Block.Timecode = int16(absTime - conn.baseTimecode)
-				conn.Block <- bt.Block
-				lastAbsTime = absTime
-			case <-timeout:
-				Logger().Warnf("Connection timed out, clean connections (streamID:%s)", p.streamID)
-				conn.close()
-				conn = nil
-				if nextConn != nil {
-					nextConn.close()
-					nextConn = nil
+				select {
+				case conn.Block <- bt.Block:
+					lastAbsTime = absTime
+				case <-timeout:
+					Logger().Warnf("Sending block timed out, clean connections (streamID:%s)", p.streamID)
+					cleanConnections()
 				}
-				lastAbsTime = 0
+			case <-timeout:
+				Logger().Warnf("Receiving block timed out, clean connections (streamID:%s)", p.streamID)
+				cleanConnections()
 			}
 		}
 	}()
