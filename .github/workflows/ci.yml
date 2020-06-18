@@ -16,5 +16,10 @@ jobs:
 
       - name: Test
         run: |
-          go test ./... -v
+          go test ./... -v -coverprofile=cover.out -covermode atomic -coverpkg ./...
           go vet ./...
+
+      - uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./cover.out
