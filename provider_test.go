@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
@@ -115,7 +116,7 @@ func TestProvider(t *testing.T) {
 	}
 }
 
-func TestProvider_WithRequestTimeout(t *testing.T) {
+func TestProvider_WithHttpClient(t *testing.T) {
 	blockTime := 2 * time.Second
 	server := NewKinesisVideoServer(WithBlockTime(blockTime))
 	defer server.Close()
@@ -149,7 +150,11 @@ func TestProvider_WithRequestTimeout(t *testing.T) {
 		}
 	}()
 
-	err := pro.PutMedia(ch, chResp, WithRequestTimeout(blockTime/2))
+	// Cause timeout error
+	client := http.Client{
+		Timeout: blockTime / 2,
+	}
+	err := pro.PutMedia(ch, chResp, WithHttpClient(client))
 	errs := err.(multiErrors)
 	if len(errs) != 1 {
 		t.Fatalf("Unexpected err size %v", err)

@@ -63,7 +63,7 @@ type PutMediaOptions struct {
 	fragmentTimecodeType   FragmentTimecodeType
 	producerStartTimestamp string
 	connectionTimeout      time.Duration
-	requestTimeout         time.Duration
+	httpClient             http.Client
 	tags                   func() []SimpleTag
 }
 
@@ -335,11 +335,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	if err != nil {
 		return nil, err
 	}
-	var httpCli http.Client
-	if to := opts.requestTimeout; to > 0 {
-		httpCli.Timeout = to
-	}
-	res, err := httpCli.Do(req)
+	res, err := opts.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -391,9 +387,9 @@ func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
 	}
 }
 
-func WithRequestTimeout(timeout time.Duration) PutMediaOption {
+func WithHttpClient(client http.Client) PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.requestTimeout = timeout
+		p.httpClient = client
 	}
 }
 
