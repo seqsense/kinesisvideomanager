@@ -229,6 +229,7 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 	}()
 
 	for seg := range ch {
+		seg := seg
 		wg.Add(1)
 		go func() {
 			defer func() {
