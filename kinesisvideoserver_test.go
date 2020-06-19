@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"time"
 
 	"github.com/at-wat/ebml-go"
@@ -16,6 +17,7 @@ type KinesisVideoServer struct {
 	*httptest.Server
 	fragments map[uint64]FragmentTest
 	blockTime time.Duration
+	mu        sync.Mutex
 }
 
 type KinesisVideoServerOption func(*KinesisVideoServer)
@@ -80,11 +82,13 @@ func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.Lock()
 	data.Segment.Cluster.Timecode += baseTimecode
 	s.fragments[data.Segment.Cluster.Timecode] = FragmentTest{
 		Cluster: data.Segment.Cluster,
 		Tags:    data.Segment.Tags,
 	}
+	s.mu.Unlock()
 
 	fmt.Fprintf(w,
 		`{"EventType":"PERSISTED", "FragmentTimecode":%d, "FragmentNumber":"%s"}`,

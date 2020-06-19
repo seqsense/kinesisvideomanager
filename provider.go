@@ -65,6 +65,7 @@ type PutMediaOptions struct {
 	connectionTimeout      time.Duration
 	httpClient             http.Client
 	tags                   func() []SimpleTag
+	onError                func(error)
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -111,17 +112,13 @@ func (c *connection) close() {
 	})
 }
 
-func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan FragmentEvent, opts ...PutMediaOption) error {
-	segmentUuid, err := generateRandomUUID()
-	if err != nil {
-		return err
-	}
+func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan FragmentEvent, opts ...PutMediaOption) {
 	options := &PutMediaOptions{
-		segmentUID:             segmentUuid,
 		title:                  "kinesisvideomanager.Provider",
 		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
 		producerStartTimestamp: "0",
 		connectionTimeout:      15 * time.Second,
+		onError:                func(err error) { Logger().Error(err) },
 	}
 	for _, o := range opts {
 		o(options)
@@ -204,27 +201,21 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		}
 	}()
 
-	return p.putSegments(chBlockChWithBaseTimecode, chResp, options)
+	p.putSegments(chBlockChWithBaseTimecode, chResp, options)
 }
 
-func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent, opts *PutMediaOptions) error {
+func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent, opts *PutMediaOptions) {
 	var wg sync.WaitGroup
+	chErr := make(chan error)
 	defer func() {
+		wg.Wait()
+		close(chErr)
 		close(chResp)
 	}()
-	chErr := make(chan error)
-	chResult := make(chan error, 1)
-	go func() {
-		defer close(chResult)
 
-		var errs multiErrors
-		for e := range chErr {
-			errs = append(errs, e)
-		}
-		if len(errs) > 0 {
-			chResult <- errs
-		} else {
-			chResult <- nil
+	go func() {
+		for err := range chErr {
+			opts.onError(err)
 		}
 	}()
 
@@ -255,13 +246,18 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 			}
 		}()
 	}
-
-	wg.Wait()
-	close(chErr)
-	return <-chResult
 }
 
 func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag chan *Tag, opts *PutMediaOptions) (io.ReadCloser, error) {
+	segmentUuid := opts.segmentUID
+	if segmentUuid == nil {
+		var err error
+		segmentUuid, err = generateRandomUUID()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	data := struct {
 		Header  EBMLHeader   `ebml:"EBML"`
 		Segment SegmentWrite `ebml:",size=unknown"`
@@ -277,7 +273,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		},
 		Segment: SegmentWrite{
 			Info: Info{
-				SegmentUID:    opts.segmentUID,
+				SegmentUID:    segmentUuid,
 				TimecodeScale: TimecodeScale,
 				Title:         opts.title,
 				MuxingApp:     "kinesisvideomanager.Provider",
@@ -338,8 +334,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		}
 		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
-	err, ok := <-chErr
-	if !ok && err != nil {
+	if err := <-chErr; err != nil {
 		return nil, err
 	}
 	return res.Body, nil
@@ -388,5 +383,11 @@ func WithHttpClient(client http.Client) PutMediaOption {
 func WithTags(tags func() []SimpleTag) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.tags = tags
+	}
+}
+
+func OnError(onError func(error)) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.onError = onError
 	}
 }
