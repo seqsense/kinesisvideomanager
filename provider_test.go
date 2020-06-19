@@ -140,13 +140,7 @@ func TestProvider_WithHttpClient(t *testing.T) {
 
 	chResp := make(chan FragmentEvent)
 	go func() {
-		for {
-			select {
-			case _, ok := <-chResp:
-				if !ok {
-					return
-				}
-			}
+		for range chResp {
 		}
 	}()
 
