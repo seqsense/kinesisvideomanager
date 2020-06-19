@@ -206,17 +206,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 
 func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent, opts *PutMediaOptions) {
 	var wg sync.WaitGroup
-	chErr := make(chan error)
 	defer func() {
 		wg.Wait()
-		close(chErr)
 		close(chResp)
-	}()
-
-	go func() {
-		for err := range chErr {
-			opts.onError(err)
-		}
 	}()
 
 	for seg := range ch {
@@ -231,14 +223,14 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 				defer res.Close()
 			}
 			if err != nil {
-				chErr <- err
+				opts.onError(err)
 				return
 			}
 
 			var fes []FragmentEvent
 			fes, err = parseFragmentEvent(res)
 			if err != nil {
-				chErr <- err
+				opts.onError(err)
 				return
 			}
 			for _, fe := range fes {
