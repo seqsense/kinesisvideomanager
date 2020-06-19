@@ -228,16 +228,7 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 		}
 	}()
 
-LOOP:
-	for {
-		var seg *BlockChWithBaseTimecode
-		var ok bool
-		select {
-		case seg, ok = <-ch:
-			if !ok {
-				break LOOP
-			}
-		}
+	for seg := range ch {
 		wg.Add(1)
 		go func() {
 			defer func() {
