@@ -3,7 +3,6 @@ package kinesisvideomanager
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"reflect"
@@ -61,6 +60,7 @@ func TestProvider(t *testing.T) {
 	startTimestamp := time.Now()
 	startTimestampInMillis := uint64(startTimestamp.UnixNano() / int64(time.Millisecond))
 	cnt := 0
+	var err error
 	opts := []PutMediaOption{
 		WithFragmentTimecodeType(FragmentTimecodeTypeRelative),
 		WithProducerStartTimestamp(startTimestamp),
@@ -70,8 +70,12 @@ func TestProvider(t *testing.T) {
 				{TagName: "TEST_TAG", TagString: fmt.Sprintf("%d", cnt)},
 			}
 		}),
+		OnError(func(e error) {
+			err = e
+		}),
 	}
-	if err := pro.PutMedia(ch, chResp, opts...); err != nil && err != io.EOF {
+	pro.PutMedia(ch, chResp, opts...)
+	if err != nil {
 		t.Fatalf("Failed to run PutMedia: %v", err)
 	}
 
@@ -126,7 +130,7 @@ func TestProvider_WithHttpClient(t *testing.T) {
 	ch := make(chan *BlockWithBaseTimecode)
 	timecodes := []uint64{
 		1000,
-		2000,
+		10001,
 	}
 	go func() {
 		defer close(ch)
@@ -148,12 +152,12 @@ func TestProvider_WithHttpClient(t *testing.T) {
 	client := http.Client{
 		Timeout: blockTime / 2,
 	}
-	err := pro.PutMedia(ch, chResp, WithHttpClient(client))
-	errs := err.(multiErrors)
-	if len(errs) != 1 {
-		t.Fatalf("Unexpected err size %v", err)
-	}
-	if nerr, ok := errs[0].(net.Error); !ok || !nerr.Timeout() {
+	var err error
+	pro.PutMedia(ch, chResp,
+		WithHttpClient(client),
+		OnError(func(e error) { err = e }),
+	)
+	if nerr, ok := err.(net.Error); !ok || !nerr.Timeout() {
 		t.Fatalf("Err must be timeout error but %v", err)
 	}
 }
