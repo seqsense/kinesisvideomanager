@@ -15,11 +15,23 @@ import (
 type KinesisVideoServer struct {
 	*httptest.Server
 	fragments map[uint64]FragmentTest
+	blockTime time.Duration
 }
 
-func NewKinesisVideoServer() *KinesisVideoServer {
+type KinesisVideoServerOption func(*KinesisVideoServer)
+
+func WithBlockTime(blockTime time.Duration) KinesisVideoServerOption {
+	return func(s *KinesisVideoServer) {
+		s.blockTime = blockTime
+	}
+}
+
+func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer {
 	s := &KinesisVideoServer{
 		fragments: make(map[uint64]FragmentTest),
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/getDataEndpoint", s.getDataEndpoint)
@@ -61,6 +73,7 @@ func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
 		baseTimecode = uint64(ts.UnixNano() / int64(time.Millisecond))
 	}
 
+	time.Sleep(s.blockTime)
 	if err := ebml.Unmarshal(r.Body, data); err != nil {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "%v", err)

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
@@ -20,20 +22,7 @@ func TestProvider(t *testing.T) {
 	server := NewKinesisVideoServer()
 	defer server.Close()
 
-	cfg := &aws.Config{
-		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
-		Region:      aws.String("ap-northeast-1"),
-		Endpoint:    &server.URL,
-	}
-	cli, err := New(session.Must(session.NewSession(cfg)), cfg)
-	if err != nil {
-		t.Fatalf("Failed to create new client: %v", err)
-	}
-
-	pro, err := cli.Provider(StreamName("test-stream"), []TrackEntry{})
-	if err != nil {
-		t.Fatalf("Failed to create new provider: %v", err)
-	}
+	pro := newProvider(t, server)
 
 	ch := make(chan *BlockWithBaseTimecode)
 	timecodes := []uint64{
@@ -125,6 +114,66 @@ func TestProvider(t *testing.T) {
 			t.Errorf("Unexpected Tags\n expected:%+v\n actual%+v", fragment.Tags, actual.Tags)
 		}
 	}
+}
+
+func TestProvider_WithHttpClient(t *testing.T) {
+	blockTime := 2 * time.Second
+	server := NewKinesisVideoServer(WithBlockTime(blockTime))
+	defer server.Close()
+
+	pro := newProvider(t, server)
+
+	ch := make(chan *BlockWithBaseTimecode)
+	timecodes := []uint64{
+		1000,
+		2000,
+	}
+	go func() {
+		defer close(ch)
+		for _, tc := range timecodes {
+			ch <- &BlockWithBaseTimecode{
+				Timecode: tc,
+				Block:    newBlock(0),
+			}
+		}
+	}()
+
+	chResp := make(chan FragmentEvent)
+	go func() {
+		for range chResp {
+		}
+	}()
+
+	// Cause timeout error
+	client := http.Client{
+		Timeout: blockTime / 2,
+	}
+	err := pro.PutMedia(ch, chResp, WithHttpClient(client))
+	errs := err.(multiErrors)
+	if len(errs) != 1 {
+		t.Fatalf("Unexpected err size %v", err)
+	}
+	if nerr, ok := errs[0].(net.Error); !ok || !nerr.Timeout() {
+		t.Fatalf("Err must be timeout error but %v", err)
+	}
+}
+
+func newProvider(t *testing.T, server *KinesisVideoServer) *Provider {
+	cfg := &aws.Config{
+		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
+		Region:      aws.String("ap-northeast-1"),
+		Endpoint:    &server.URL,
+	}
+	cli, err := New(session.Must(session.NewSession(cfg)), cfg)
+	if err != nil {
+		t.Fatalf("Failed to create new client: %v", err)
+	}
+
+	pro, err := cli.Provider(StreamName("test-stream"), []TrackEntry{})
+	if err != nil {
+		t.Fatalf("Failed to create new provider: %v", err)
+	}
+	return pro
 }
 
 func newBlock(timecode int16) ebml.Block {
