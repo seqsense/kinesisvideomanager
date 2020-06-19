@@ -33,7 +33,6 @@ type Provider struct {
 	streamID  StreamID
 	endpoint  string
 	signer    *v4.Signer
-	httpCli   http.Client
 	cliConfig *client.Config
 	tracks    []TrackEntry
 }
@@ -64,6 +63,7 @@ type PutMediaOptions struct {
 	fragmentTimecodeType   FragmentTimecodeType
 	producerStartTimestamp string
 	connectionTimeout      time.Duration
+	requestTimeout         time.Duration
 	tags                   func() []SimpleTag
 }
 
@@ -210,20 +210,33 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent, opts *PutMediaOptions) error {
 	var wg sync.WaitGroup
 	defer func() {
-		wg.Wait()
 		close(chResp)
 	}()
 	chErr := make(chan error)
+	chResult := make(chan error, 1)
+	go func() {
+		defer close(chResult)
+
+		var errs multiErrors
+		for e := range chErr {
+			errs = append(errs, e)
+		}
+		if len(errs) > 0 {
+			chResult <- errs
+		} else {
+			chResult <- nil
+		}
+	}()
+
+LOOP:
 	for {
 		var seg *BlockChWithBaseTimecode
 		var ok bool
 		select {
 		case seg, ok = <-ch:
 			if !ok {
-				return io.EOF
+				break LOOP
 			}
-		case err := <-chErr:
-			return err
 		}
 		wg.Add(1)
 		go func() {
@@ -250,6 +263,10 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 			}
 		}()
 	}
+
+	wg.Wait()
+	close(chErr)
+	return <-chResult
 }
 
 func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag chan *Tag, opts *PutMediaOptions) (io.ReadCloser, error) {
@@ -318,7 +335,11 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	if err != nil {
 		return nil, err
 	}
-	res, err := p.httpCli.Do(req)
+	var httpCli http.Client
+	if to := opts.requestTimeout; to > 0 {
+		httpCli.Timeout = to
+	}
+	res, err := httpCli.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -367,6 +388,12 @@ func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption
 func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.connectionTimeout = timeout
+	}
+}
+
+func WithRequestTimeout(timeout time.Duration) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.requestTimeout = timeout
 	}
 }
 
