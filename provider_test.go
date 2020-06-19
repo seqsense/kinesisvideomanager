@@ -152,7 +152,7 @@ func TestProvider_WithRequestTimeout(t *testing.T) {
 	err := pro.PutMedia(ch, chResp, WithRequestTimeout(blockTime/2))
 	errs := err.(multiErrors)
 	if len(errs) != 1 {
-		t.Fatalf("Unexoected err must be timeout error but %v", err)
+		t.Fatalf("Unexpected err size %v", err)
 	}
 	if nerr, ok := errs[0].(net.Error); !ok || !nerr.Timeout() {
 		t.Fatalf("Err must be timeout error but %v", err)
