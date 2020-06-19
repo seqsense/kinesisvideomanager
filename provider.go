@@ -1,6 +1,7 @@
 package kinesisvideomanager
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
@@ -12,7 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/signer/v4"
+	v4 "github.com/aws/aws-sdk-go/aws/signer/v4"
 	"github.com/aws/aws-sdk-go/service/kinesisvideo"
 
 	"github.com/at-wat/ebml-go"
@@ -287,11 +288,20 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	r, w := io.Pipe()
 	chErr := make(chan error)
 	go func() {
-		if err := ebml.Marshal(&data, w); err != nil {
+		defer func() {
+			close(chErr)
+			w.CloseWithError(io.EOF)
+		}()
+
+		buf := bufio.NewWriter(w)
+		if err := ebml.Marshal(&data, buf); err != nil {
 			chErr <- err
+			return
 		}
-		close(chErr)
-		w.CloseWithError(io.EOF)
+		if err := buf.Flush(); err != nil {
+			chErr <- err
+			return
+		}
 	}()
 
 	req, err := http.NewRequest("POST", p.endpoint, r)
