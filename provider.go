@@ -190,6 +190,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 					nextConn = nil
 				}
 				bt.Block.Timecode = int16(absTime - conn.baseTimecode)
+				if conn != nil {
+					timeout = conn.timeout
+				}
 				select {
 				case conn.Block <- bt.Block:
 					lastAbsTime = absTime
