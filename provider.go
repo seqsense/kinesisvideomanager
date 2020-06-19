@@ -22,6 +22,13 @@ import (
 
 const TimecodeScale = 1000000
 
+var immediateTimeout chan time.Time
+
+func init() {
+	immediateTimeout = make(chan time.Time)
+	close(immediateTimeout)
+}
+
 type Provider struct {
 	streamID  StreamID
 	endpoint  string
@@ -70,6 +77,16 @@ type connection struct {
 	timeout         <-chan time.Time
 }
 
+func newConnection() *connection {
+	return &connection{
+		BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
+			Timecode: make(chan uint64, 1),
+			Block:    make(chan ebml.Block),
+			Tag:      make(chan *Tag, 1),
+		},
+		timeout: immediateTimeout,
+	}
+}
 func (c *connection) initialize(baseTimecode uint64, opts *PutMediaOptions) {
 	c.setBaseTimecode(baseTimecode)
 
@@ -160,13 +177,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 
 				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
 					Logger().Debugf("Prepare next connection (streamID:%s)", p.streamID)
-					nextConn = &connection{
-						BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
-							Timecode: make(chan uint64, 1),
-							Block:    make(chan ebml.Block),
-							Tag:      make(chan *Tag, 1),
-						},
-					}
+					nextConn = newConnection()
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
 				if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
