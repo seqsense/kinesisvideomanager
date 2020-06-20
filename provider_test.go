@@ -1,4 +1,4 @@
-package kinesisvideomanager
+package kinesisvideomanager_test
 
 import (
 	"context"
@@ -13,17 +13,20 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+
+	kvm "github.com/seqsense/kinesisvideomanager"
+	kvsm "github.com/seqsense/kinesisvideomanager/kvsmockserver"
 )
 
 var testData = [][]byte{{0x01, 0x02}}
 
 func TestProvider(t *testing.T) {
-	server := NewKinesisVideoServer()
+	server := kvsm.NewKinesisVideoServer()
 	defer server.Close()
 
 	pro := newProvider(t, server)
 
-	ch := make(chan *BlockWithBaseTimecode)
+	ch := make(chan *kvm.BlockWithBaseTimecode)
 	timecodes := []uint64{
 		1000,
 		9000,
@@ -34,15 +37,15 @@ func TestProvider(t *testing.T) {
 	go func() {
 		defer close(ch)
 		for _, tc := range timecodes {
-			ch <- &BlockWithBaseTimecode{
+			ch <- &kvm.BlockWithBaseTimecode{
 				Timecode: tc,
 				Block:    newBlock(0),
 			}
 		}
 	}()
 
-	chResp := make(chan FragmentEvent)
-	var response []FragmentEvent
+	chResp := make(chan kvm.FragmentEvent)
+	var response []kvm.FragmentEvent
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	go func() {
 		defer cancel()
@@ -61,16 +64,16 @@ func TestProvider(t *testing.T) {
 	startTimestampInMillis := uint64(startTimestamp.UnixNano() / int64(time.Millisecond))
 	cnt := 0
 	var err error
-	opts := []PutMediaOption{
-		WithFragmentTimecodeType(FragmentTimecodeTypeRelative),
-		WithProducerStartTimestamp(startTimestamp),
-		WithTags(func() []SimpleTag {
+	opts := []kvm.PutMediaOption{
+		kvm.WithFragmentTimecodeType(kvm.FragmentTimecodeTypeRelative),
+		kvm.WithProducerStartTimestamp(startTimestamp),
+		kvm.WithTags(func() []kvm.SimpleTag {
 			cnt++
-			return []SimpleTag{
+			return []kvm.SimpleTag{
 				{TagName: "TEST_TAG", TagString: fmt.Sprintf("%d", cnt)},
 			}
 		}),
-		OnError(func(e error) {
+		kvm.OnError(func(e error) {
 			err = e
 		}),
 	}
@@ -84,20 +87,20 @@ func TestProvider(t *testing.T) {
 		t.Fatalf("PutMedia timed out")
 	}
 
-	expected := []FragmentTest{
+	expected := []kvsm.FragmentTest{
 		{
-			Cluster: ClusterTest{
+			Cluster: kvsm.ClusterTest{
 				Timecode:    startTimestampInMillis + 1000,
 				SimpleBlock: []ebml.Block{newBlock(0), newBlock(8000), newBlock(9000)},
 			},
-			Tags: newTags([]SimpleTag{{TagName: "TEST_TAG", TagString: "1"}}),
+			Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "1"}}),
 		},
 		{
-			Cluster: ClusterTest{
+			Cluster: kvsm.ClusterTest{
 				Timecode:    startTimestampInMillis + 10001,
 				SimpleBlock: []ebml.Block{newBlock(0), newBlock(1)},
 			},
-			Tags: newTags([]SimpleTag{{TagName: "TEST_TAG", TagString: "2"}}),
+			Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "2"}}),
 		},
 	}
 
@@ -122,12 +125,12 @@ func TestProvider(t *testing.T) {
 
 func TestProvider_WithHttpClient(t *testing.T) {
 	blockTime := 2 * time.Second
-	server := NewKinesisVideoServer(WithBlockTime(blockTime))
+	server := kvsm.NewKinesisVideoServer(kvsm.WithBlockTime(blockTime))
 	defer server.Close()
 
 	pro := newProvider(t, server)
 
-	ch := make(chan *BlockWithBaseTimecode)
+	ch := make(chan *kvm.BlockWithBaseTimecode)
 	timecodes := []uint64{
 		1000,
 		10001,
@@ -135,14 +138,14 @@ func TestProvider_WithHttpClient(t *testing.T) {
 	go func() {
 		defer close(ch)
 		for _, tc := range timecodes {
-			ch <- &BlockWithBaseTimecode{
+			ch <- &kvm.BlockWithBaseTimecode{
 				Timecode: tc,
 				Block:    newBlock(0),
 			}
 		}
 	}()
 
-	chResp := make(chan FragmentEvent)
+	chResp := make(chan kvm.FragmentEvent)
 	go func() {
 		for range chResp {
 		}
@@ -154,26 +157,26 @@ func TestProvider_WithHttpClient(t *testing.T) {
 	}
 	var err error
 	pro.PutMedia(ch, chResp,
-		WithHttpClient(client),
-		OnError(func(e error) { err = e }),
+		kvm.WithHttpClient(client),
+		kvm.OnError(func(e error) { err = e }),
 	)
 	if nerr, ok := err.(net.Error); !ok || !nerr.Timeout() {
 		t.Fatalf("Err must be timeout error but %v", err)
 	}
 }
 
-func newProvider(t *testing.T, server *KinesisVideoServer) *Provider {
+func newProvider(t *testing.T, server *kvsm.KinesisVideoServer) *kvm.Provider {
 	cfg := &aws.Config{
 		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
 		Region:      aws.String("ap-northeast-1"),
 		Endpoint:    &server.URL,
 	}
-	cli, err := New(session.Must(session.NewSession(cfg)), cfg)
+	cli, err := kvm.New(session.Must(session.NewSession(cfg)), cfg)
 	if err != nil {
 		t.Fatalf("Failed to create new client: %v", err)
 	}
 
-	pro, err := cli.Provider(StreamName("test-stream"), []TrackEntry{})
+	pro, err := cli.Provider(kvm.StreamName("test-stream"), []kvm.TrackEntry{})
 	if err != nil {
 		t.Fatalf("Failed to create new provider: %v", err)
 	}
@@ -189,6 +192,6 @@ func newBlock(timecode int16) ebml.Block {
 		Data:        testData,
 	}
 }
-func newTags(tags []SimpleTag) TagsTest {
-	return TagsTest{Tag: []Tag{{SimpleTag: tags}}}
+func newTags(tags []kvm.SimpleTag) kvsm.TagsTest {
+	return kvsm.TagsTest{Tag: []kvm.Tag{{SimpleTag: tags}}}
 }

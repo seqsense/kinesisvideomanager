@@ -1,4 +1,4 @@
-package kinesisvideomanager
+package kvsmockserver
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/at-wat/ebml-go"
+	kvm "github.com/seqsense/kinesisvideomanager"
 )
 
 type KinesisVideoServer struct {
@@ -58,15 +59,15 @@ func (s *KinesisVideoServer) getDataEndpoint(w http.ResponseWriter, r *http.Requ
 
 func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
 	data := &struct {
-		Header  EBMLHeader `ebml:"EBML"`
-		Segment segment    `ebml:",size=unknown"`
+		Header  kvm.EBMLHeader `ebml:"EBML"`
+		Segment segment        `ebml:",size=unknown"`
 	}{}
 
-	timecodeType := FragmentTimecodeType(r.Header.Get("x-amzn-fragment-timecode-type"))
+	timecodeType := kvm.FragmentTimecodeType(r.Header.Get("x-amzn-fragment-timecode-type"))
 	baseTimecode := uint64(0)
-	if timecodeType == FragmentTimecodeTypeRelative {
+	if timecodeType == kvm.FragmentTimecodeTypeRelative {
 		startTimestamp := r.Header.Get("x-amzn-producer-start-timestamp")
-		ts, err := ParseTimestamp(startTimestamp)
+		ts, err := kvm.ParseTimestamp(startTimestamp)
 		if err != nil {
 			w.WriteHeader(500)
 			fmt.Fprintf(w, "%v", err)
@@ -103,7 +104,7 @@ func (s *KinesisVideoServer) getMedia(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%v", err)
 		return
 	}
-	body := &GetMediaBody{}
+	body := &kvm.GetMediaBody{}
 	if err := json.Unmarshal(bs, body); err != nil {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "%v", err)
@@ -118,8 +119,8 @@ func (s *KinesisVideoServer) getMedia(w http.ResponseWriter, r *http.Request) {
 		}
 
 		data := &struct {
-			Header  EBMLHeader `ebml:"EBML"`
-			Segment segment    `ebml:",size=unknown"`
+			Header  kvm.EBMLHeader `ebml:"EBML"`
+			Segment segment        `ebml:",size=unknown"`
 		}{}
 		data.Segment.Cluster = fragment.Cluster
 		data.Segment.Tags = fragment.Tags
@@ -133,8 +134,8 @@ func (s *KinesisVideoServer) getMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 type segment struct {
-	Info    Info
-	Tracks  Tracks
+	Info    kvm.Info
+	Tracks  kvm.Tracks
 	Cluster ClusterTest `ebml:",size=unknown"`
 	Tags    TagsTest
 }
@@ -151,5 +152,5 @@ type ClusterTest struct {
 }
 
 type TagsTest struct {
-	Tag []Tag
+	Tag []kvm.Tag
 }
