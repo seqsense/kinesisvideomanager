@@ -17,6 +17,17 @@
             "schedule": [
                 "on the first day of the month"
             ]
+        },
+        {
+            "packagePatterns": [
+                "^github.com/aws/aws-sdk-go",
+                "^github.com/golang/protobuf",
+                "^google.golang.org/grpc"
+            ],
+            "separateMinorPatch": true,
+            "patch": {
+                "automerge": true
+            }
         }
     ],
     "timezone": "Asia/Tokyo"
