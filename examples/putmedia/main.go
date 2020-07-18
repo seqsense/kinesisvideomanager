@@ -91,8 +91,7 @@ func main() {
 		}
 	}()
 
-	err = pro.PutMedia(ch, chResp)
-	if err != nil {
+	pro.PutMedia(ch, chResp, kvm.OnError(func(err error) {
 		log.Printf("failed: %v", err)
-	}
+	}))
 }
