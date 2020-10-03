@@ -26,7 +26,7 @@ type FragmentError struct {
 }
 
 func (e *FragmentError) Error() string {
-	return fmt.Sprintf("%+v", e)
+	return fmt.Sprintf("fragmentNumber:%s code:%s message:%s", e.FragmentNumber, e.Code, e.Message)
 }
 
 func New(streamID kvm.StreamID, sess client.ConfigProvider, cfgs ...*aws.Config) (*Client, error) {
