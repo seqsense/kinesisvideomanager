@@ -13,7 +13,8 @@
   "packageRules": [
     {
       "packagePatterns": [
-        "^golang.org/x/"
+        "^golang.org/x/",
+        "google.golang.org/genproto"
       ],
       "schedule": [
         "on the first day of the month"
