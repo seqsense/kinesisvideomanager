@@ -1,4 +1,4 @@
-package kinesisvideomanager
+package kinesisvideomanager_test
 
 import (
 	"context"
@@ -10,10 +10,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+
+	kvm "github.com/seqsense/kinesisvideomanager"
+	kvsm "github.com/seqsense/kinesisvideomanager/kvsmockserver"
 )
 
 func TestConsumer(t *testing.T) {
-	server := NewKinesisVideoServer()
+	server := kvsm.NewKinesisVideoServer()
 	defer server.Close()
 
 	cfg := &aws.Config{
@@ -21,40 +24,40 @@ func TestConsumer(t *testing.T) {
 		Region:      aws.String("ap-northeast-1"),
 		Endpoint:    &server.URL,
 	}
-	cli, err := New(session.Must(session.NewSession(cfg)), cfg)
+	cli, err := kvm.New(session.Must(session.NewSession(cfg)), cfg)
 	if err != nil {
 		t.Fatalf("Failed to create new client: %v", err)
 	}
 
-	con, err := cli.Consumer(StreamName("test-stream"))
+	con, err := cli.Consumer(kvm.StreamName("test-stream"))
 	if err != nil {
 		t.Fatalf("Failed to create new consumer: %v", err)
 	}
 
-	testData := []FragmentTest{
+	testData := []kvsm.FragmentTest{
 		{
-			Cluster: ClusterTest{
+			Cluster: kvsm.ClusterTest{
 				Timecode:    1000,
 				SimpleBlock: []ebml.Block{newBlock(0), newBlock(100), newBlock(200)},
 			},
-			Tags: newTags([]SimpleTag{{TagName: "TEST_TAG", TagString: "1"}}),
+			Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "1"}}),
 		},
 		{
-			Cluster: ClusterTest{
+			Cluster: kvsm.ClusterTest{
 				Timecode:    2000,
 				SimpleBlock: []ebml.Block{newBlock(0), newBlock(100)},
 			},
-			Tags: newTags([]SimpleTag{{TagName: "TEST_TAG", TagString: "2"}}),
+			Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "2"}}),
 		},
 	}
 	for _, f := range testData {
 		server.RegisterFragment(f)
 	}
 
-	ch := make(chan *BlockWithBaseTimecode)
-	var blocks []*BlockWithBaseTimecode
-	chTag := make(chan *Tag)
-	var tags []SimpleTag
+	ch := make(chan *kvm.BlockWithBaseTimecode)
+	var blocks []*kvm.BlockWithBaseTimecode
+	chTag := make(chan *kvm.Tag)
+	var tags []kvm.SimpleTag
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -76,8 +79,8 @@ func TestConsumer(t *testing.T) {
 		}
 	}()
 
-	opts := []GetMediaOption{
-		WithStartSelectorProducerTimestamp(time.Unix(1001, 0)),
+	opts := []kvm.GetMediaOption{
+		kvm.WithStartSelectorProducerTimestamp(time.Unix(1001, 0)),
 	}
 	_, err = con.GetMedia(ch, chTag, opts...)
 	if err != nil {
@@ -90,7 +93,7 @@ func TestConsumer(t *testing.T) {
 	}
 
 	// check only second fragment was loaded
-	expectedBlocks := []*BlockWithBaseTimecode{
+	expectedBlocks := []*kvm.BlockWithBaseTimecode{
 		{
 			Timecode: 2000,
 			Block:    newBlock(0),
@@ -105,7 +108,7 @@ func TestConsumer(t *testing.T) {
 		t.Errorf("Unexpected Blocks\n expected:%+v\n actual%+v", expectedBlocks, blocks)
 	}
 
-	expectedTags := []SimpleTag{
+	expectedTags := []kvm.SimpleTag{
 		{TagName: "TEST_TAG", TagString: "2"},
 	}
 	if !reflect.DeepEqual(expectedTags, tags) {
