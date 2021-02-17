@@ -12,7 +12,7 @@
   ],
   "packageRules": [
     {
-      "packagePatterns": [
+      "matchPackagePatterns": [
         "^golang.org/x/",
         "google.golang.org/genproto"
       ],
@@ -21,7 +21,7 @@
       ]
     },
     {
-      "packagePatterns": [
+      "matchPackagePatterns": [
         "^github.com/seqsense/"
       ],
       "schedule": [
@@ -29,7 +29,7 @@
       ]
     },
     {
-      "packagePatterns": [
+      "matchPackagePatterns": [
         "^github.com/aws/aws-sdk-go",
         "^github.com/golang/protobuf",
         "^google.golang.org/grpc"
