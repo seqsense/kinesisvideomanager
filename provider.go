@@ -51,6 +51,8 @@ type Provider struct {
 	signer    *v4.Signer
 	cliConfig *client.Config
 	tracks    []TrackEntry
+
+	bufferPool sync.Pool
 }
 
 func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, error) {
@@ -70,6 +72,11 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 		signer:    c.signer,
 		cliConfig: c.cliConfig,
 		tracks:    tracks,
+		bufferPool: sync.Pool{
+			New: func() interface{} {
+				return bytes.NewBuffer(make([]byte, 1024))
+			},
+		},
 	}, nil
 }
 
@@ -82,6 +89,8 @@ type PutMediaOptions struct {
 	httpClient             http.Client
 	tags                   func() []SimpleTag
 	onError                func(error)
+	retryCount             int
+	retryIntervalBase      time.Duration
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -300,13 +309,23 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		},
 	}
 
-	r, w := io.Pipe()
+	r, wOut := io.Pipe()
+	w := io.Writer(wOut)
+	var backup *bytes.Buffer
+	if opts.retryCount > 0 {
+		// Take copy of the fragment.
+		backup = p.bufferPool.Get().(*bytes.Buffer)
+		defer p.bufferPool.Put(backup)
+		backup.Reset()
+		w = io.MultiWriter(wOut, backup)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	ctxErr := &errContext{Context: ctx}
 	go func() {
 		defer func() {
 			cancel()
-			w.CloseWithError(io.EOF)
+			wOut.CloseWithError(io.EOF)
 		}()
 
 		buf := bufio.NewWriter(w)
@@ -319,7 +338,20 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 			return
 		}
 	}()
-	return p.putMediaRaw(ctxErr, r, opts)
+	ret, err := p.putMediaRaw(ctxErr, r, opts)
+	if err != nil && opts.retryCount > 0 {
+		interval := opts.retryIntervalBase
+		for i := 0; i < opts.retryCount; i++ {
+			time.Sleep(interval)
+
+			ret, err = p.putMediaRaw(ctxErr, bytes.NewReader(backup.Bytes()), opts)
+			if err == nil {
+				break
+			}
+			interval *= 2
+		}
+	}
+	return ret, err
 }
 
 type errContext struct {
@@ -420,5 +452,12 @@ func WithTags(tags func() []SimpleTag) PutMediaOption {
 func OnError(onError func(error)) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.onError = onError
+	}
+}
+
+func WithRetry(count int, intervalBase time.Duration) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.retryCount = count
+		p.retryIntervalBase = intervalBase
 	}
 }

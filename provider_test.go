@@ -35,105 +35,136 @@ import (
 var testData = [][]byte{{0x01, 0x02}}
 
 func TestProvider(t *testing.T) {
-	server := kvsm.NewKinesisVideoServer()
-	defer server.Close()
+	dropped := make(map[uint64]bool)
 
-	pro := newProvider(t, server)
-
-	ch := make(chan *kvm.BlockWithBaseTimecode)
-	timecodes := []uint64{
-		1000,
-		9000,
-		10000,
-		10001, // switch to the next fragment here
-		10002,
+	testCases := map[string]struct {
+		mockServerOpts []kvsm.KinesisVideoServerOption
+		putMediaOpts   []kvm.PutMediaOption
+	}{
+		"NoError": {},
+		"ErrorRetry": {
+			mockServerOpts: []kvsm.KinesisVideoServerOption{
+				kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+					if !dropped[timecode] {
+						dropped[timecode] = true
+						w.WriteHeader(500)
+						t.Logf("Error injected: timecode=%d", timecode)
+						return false
+					}
+					return true
+				}),
+			},
+			putMediaOpts: []kvm.PutMediaOption{
+				kvm.WithRetry(2, 100*time.Millisecond),
+			},
+		},
 	}
-	go func() {
-		defer close(ch)
-		for _, tc := range timecodes {
-			ch <- &kvm.BlockWithBaseTimecode{
-				Timecode: tc,
-				Block:    newBlock(0),
-			}
-		}
-	}()
 
-	chResp := make(chan kvm.FragmentEvent)
-	var response []kvm.FragmentEvent
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	go func() {
-		defer cancel()
-		for {
-			select {
-			case r, ok := <-chResp:
-				if !ok {
-					return
+	for name, testCase := range testCases {
+		testCase := testCase
+		t.Run(name, func(t *testing.T) {
+			server := kvsm.NewKinesisVideoServer(testCase.mockServerOpts...)
+			defer server.Close()
+
+			pro := newProvider(t, server)
+
+			ch := make(chan *kvm.BlockWithBaseTimecode)
+			timecodes := []uint64{
+				1000,
+				9000,
+				10000,
+				10001, // switch to the next fragment here
+				10002,
+			}
+			go func() {
+				defer close(ch)
+				for _, tc := range timecodes {
+					ch <- &kvm.BlockWithBaseTimecode{
+						Timecode: tc,
+						Block:    newBlock(0),
+					}
 				}
-				response = append(response, r)
+			}()
+
+			chResp := make(chan kvm.FragmentEvent)
+			var response []kvm.FragmentEvent
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			go func() {
+				defer cancel()
+				for {
+					select {
+					case r, ok := <-chResp:
+						if !ok {
+							return
+						}
+						response = append(response, r)
+					}
+				}
+			}()
+
+			startTimestamp := time.Now()
+			startTimestampInMillis := uint64(startTimestamp.UnixNano() / int64(time.Millisecond))
+			cnt := 0
+			var err error
+			opts := []kvm.PutMediaOption{
+				kvm.WithFragmentTimecodeType(kvm.FragmentTimecodeTypeRelative),
+				kvm.WithProducerStartTimestamp(startTimestamp),
+				kvm.WithTags(func() []kvm.SimpleTag {
+					cnt++
+					return []kvm.SimpleTag{
+						{TagName: "TEST_TAG", TagString: fmt.Sprintf("%d", cnt)},
+					}
+				}),
+				kvm.OnError(func(e error) {
+					err = e
+				}),
 			}
-		}
-	}()
-
-	startTimestamp := time.Now()
-	startTimestampInMillis := uint64(startTimestamp.UnixNano() / int64(time.Millisecond))
-	cnt := 0
-	var err error
-	opts := []kvm.PutMediaOption{
-		kvm.WithFragmentTimecodeType(kvm.FragmentTimecodeTypeRelative),
-		kvm.WithProducerStartTimestamp(startTimestamp),
-		kvm.WithTags(func() []kvm.SimpleTag {
-			cnt++
-			return []kvm.SimpleTag{
-				{TagName: "TEST_TAG", TagString: fmt.Sprintf("%d", cnt)},
+			opts = append(opts, testCase.putMediaOpts...)
+			pro.PutMedia(ch, chResp, opts...)
+			if err != nil {
+				t.Fatalf("Failed to run PutMedia: %v", err)
 			}
-		}),
-		kvm.OnError(func(e error) {
-			err = e
-		}),
-	}
-	pro.PutMedia(ch, chResp, opts...)
-	if err != nil {
-		t.Fatalf("Failed to run PutMedia: %v", err)
-	}
 
-	<-ctx.Done()
-	if ctx.Err() == context.DeadlineExceeded {
-		t.Fatalf("PutMedia timed out")
-	}
+			<-ctx.Done()
+			if ctx.Err() == context.DeadlineExceeded {
+				t.Fatalf("PutMedia timed out")
+			}
 
-	expected := []kvsm.FragmentTest{
-		{
-			Cluster: kvsm.ClusterTest{
-				Timecode:    startTimestampInMillis + 1000,
-				SimpleBlock: []ebml.Block{newBlock(0), newBlock(8000), newBlock(9000)},
-			},
-			Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "1"}}),
-		},
-		{
-			Cluster: kvsm.ClusterTest{
-				Timecode:    startTimestampInMillis + 10001,
-				SimpleBlock: []ebml.Block{newBlock(0), newBlock(1)},
-			},
-			Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "2"}}),
-		},
-	}
+			expected := []kvsm.FragmentTest{
+				{
+					Cluster: kvsm.ClusterTest{
+						Timecode:    startTimestampInMillis + 1000,
+						SimpleBlock: []ebml.Block{newBlock(0), newBlock(8000), newBlock(9000)},
+					},
+					Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "1"}}),
+				},
+				{
+					Cluster: kvsm.ClusterTest{
+						Timecode:    startTimestampInMillis + 10001,
+						SimpleBlock: []ebml.Block{newBlock(0), newBlock(1)},
+					},
+					Tags: newTags([]kvm.SimpleTag{{TagName: "TEST_TAG", TagString: "2"}}),
+				},
+			}
 
-	if n := len(response); n != len(expected) {
-		t.Fatalf("Response size expected to be %d but %d", len(expected), n)
-	}
+			if n := len(response); n != len(expected) {
+				t.Fatalf("Response size expected to be %d but %d", len(expected), n)
+			}
 
-	for _, fragment := range expected {
-		actual, ok := server.GetFragment(fragment.Cluster.Timecode)
-		if !ok {
-			t.Errorf("fragment %d not found", fragment.Cluster.Timecode)
-			continue
-		}
-		if !reflect.DeepEqual(fragment.Cluster, actual.Cluster) {
-			t.Errorf("Unexpected Cluster\n expected:%+v\n actual%+v", fragment.Cluster, actual.Cluster)
-		}
-		if !reflect.DeepEqual(fragment.Tags, actual.Tags) {
-			t.Errorf("Unexpected Tags\n expected:%+v\n actual%+v", fragment.Tags, actual.Tags)
-		}
+			for _, fragment := range expected {
+				actual, ok := server.GetFragment(fragment.Cluster.Timecode)
+				if !ok {
+					t.Errorf("fragment %d not found", fragment.Cluster.Timecode)
+					continue
+				}
+				if !reflect.DeepEqual(fragment.Cluster, actual.Cluster) {
+					t.Errorf("Unexpected Cluster\n expected:%+v\n actual%+v", fragment.Cluster, actual.Cluster)
+				}
+				if !reflect.DeepEqual(fragment.Tags, actual.Tags) {
+					t.Errorf("Unexpected Tags\n expected:%+v\n actual%+v", fragment.Tags, actual.Tags)
+				}
+			}
+		})
 	}
 }
 
