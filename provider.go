@@ -17,6 +17,7 @@ package kinesisvideomanager
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -300,24 +301,37 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	}
 
 	r, w := io.Pipe()
-	chErr := make(chan error)
+	ctx, cancel := context.WithCancel(context.Background())
+	ctxErr := &errContext{Context: ctx}
 	go func() {
 		defer func() {
-			close(chErr)
+			cancel()
 			w.CloseWithError(io.EOF)
 		}()
 
 		buf := bufio.NewWriter(w)
 		if err := ebml.Marshal(&data, buf); err != nil {
-			chErr <- err
+			ctxErr.err = err
 			return
 		}
 		if err := buf.Flush(); err != nil {
-			chErr <- err
+			ctxErr.err = err
 			return
 		}
 	}()
+	return p.putMediaRaw(ctxErr, r, opts)
+}
 
+type errContext struct {
+	context.Context
+	err error
+}
+
+func (c *errContext) Err() error {
+	return c.err
+}
+
+func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
 	req, err := http.NewRequest("POST", p.endpoint, r)
 	if err != nil {
 		return nil, err
@@ -350,7 +364,8 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		}
 		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
-	if err := <-chErr; err != nil {
+	<-ctx.Done()
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return res.Body, nil
