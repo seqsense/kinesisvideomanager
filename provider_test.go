@@ -55,7 +55,7 @@ func TestProvider(t *testing.T) {
 				}),
 			},
 			putMediaOpts: []kvm.PutMediaOption{
-				kvm.WithRetry(2, 100*time.Millisecond),
+				kvm.WithPutMediaRetry(2, 100*time.Millisecond),
 			},
 		},
 	}

@@ -455,7 +455,7 @@ func OnError(onError func(error)) PutMediaOption {
 	}
 }
 
-func WithRetry(count int, intervalBase time.Duration) PutMediaOption {
+func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.retryCount = count
 		p.retryIntervalBase = intervalBase
