@@ -33,6 +33,8 @@ type KinesisVideoServer struct {
 	fragments map[uint64]FragmentTest
 	blockTime time.Duration
 	mu        sync.Mutex
+
+	putMediaHook func(uint64, *FragmentTest, http.ResponseWriter) bool
 }
 
 type KinesisVideoServerOption func(*KinesisVideoServer)
@@ -40,6 +42,12 @@ type KinesisVideoServerOption func(*KinesisVideoServer)
 func WithBlockTime(blockTime time.Duration) KinesisVideoServerOption {
 	return func(s *KinesisVideoServer) {
 		s.blockTime = blockTime
+	}
+}
+
+func WithPutMediaHook(h func(uint64, *FragmentTest, http.ResponseWriter) bool) KinesisVideoServerOption {
+	return func(s *KinesisVideoServer) {
+		s.putMediaHook = h
 	}
 }
 
@@ -97,12 +105,18 @@ func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.mu.Lock()
 	data.Segment.Cluster.Timecode += baseTimecode
-	s.fragments[data.Segment.Cluster.Timecode] = FragmentTest{
+	fragment := FragmentTest{
 		Cluster: data.Segment.Cluster,
 		Tags:    data.Segment.Tags,
 	}
+	if s.putMediaHook != nil {
+		if !s.putMediaHook(data.Segment.Cluster.Timecode, &fragment, w) {
+			return
+		}
+	}
+	s.mu.Lock()
+	s.fragments[data.Segment.Cluster.Timecode] = fragment
 	s.mu.Unlock()
 
 	fmt.Fprintf(w,

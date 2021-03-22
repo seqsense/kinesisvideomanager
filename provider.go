@@ -17,6 +17,7 @@ package kinesisvideomanager
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -50,6 +51,8 @@ type Provider struct {
 	signer    *v4.Signer
 	cliConfig *client.Config
 	tracks    []TrackEntry
+
+	bufferPool sync.Pool
 }
 
 func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, error) {
@@ -69,6 +72,11 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 		signer:    c.signer,
 		cliConfig: c.cliConfig,
 		tracks:    tracks,
+		bufferPool: sync.Pool{
+			New: func() interface{} {
+				return bytes.NewBuffer(make([]byte, 1024))
+			},
+		},
 	}, nil
 }
 
@@ -81,6 +89,8 @@ type PutMediaOptions struct {
 	httpClient             http.Client
 	tags                   func() []SimpleTag
 	onError                func(error)
+	retryCount             int
+	retryIntervalBase      time.Duration
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -299,25 +309,61 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		},
 	}
 
-	r, w := io.Pipe()
-	chErr := make(chan error)
+	r, wOut := io.Pipe()
+	w := io.Writer(wOut)
+	var backup *bytes.Buffer
+	if opts.retryCount > 0 {
+		// Take copy of the fragment.
+		backup = p.bufferPool.Get().(*bytes.Buffer)
+		defer p.bufferPool.Put(backup)
+		backup.Reset()
+		w = io.MultiWriter(wOut, backup)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ctxErr := &errContext{Context: ctx}
 	go func() {
 		defer func() {
-			close(chErr)
-			w.CloseWithError(io.EOF)
+			cancel()
+			wOut.CloseWithError(io.EOF)
 		}()
 
 		buf := bufio.NewWriter(w)
 		if err := ebml.Marshal(&data, buf); err != nil {
-			chErr <- err
+			ctxErr.err = err
 			return
 		}
 		if err := buf.Flush(); err != nil {
-			chErr <- err
+			ctxErr.err = err
 			return
 		}
 	}()
+	ret, err := p.putMediaRaw(ctxErr, r, opts)
+	if err != nil && opts.retryCount > 0 {
+		interval := opts.retryIntervalBase
+		for i := 0; i < opts.retryCount; i++ {
+			time.Sleep(interval)
 
+			ret, err = p.putMediaRaw(ctxErr, bytes.NewReader(backup.Bytes()), opts)
+			if err == nil {
+				break
+			}
+			interval *= 2
+		}
+	}
+	return ret, err
+}
+
+type errContext struct {
+	context.Context
+	err error
+}
+
+func (c *errContext) Err() error {
+	return c.err
+}
+
+func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
 	req, err := http.NewRequest("POST", p.endpoint, r)
 	if err != nil {
 		return nil, err
@@ -350,7 +396,8 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		}
 		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
-	if err := <-chErr; err != nil {
+	<-ctx.Done()
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	return res.Body, nil
@@ -405,5 +452,12 @@ func WithTags(tags func() []SimpleTag) PutMediaOption {
 func OnError(onError func(error)) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.onError = onError
+	}
+}
+
+func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.retryCount = count
+		p.retryIntervalBase = intervalBase
 	}
 }
