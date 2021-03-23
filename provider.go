@@ -344,7 +344,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		for i := 0; i < opts.retryCount; i++ {
 			time.Sleep(interval)
 
-			Logger().Infof("Retrying PutMedia: %v (streamID:%s)", err, p.streamID)
+			Logger().Infof("Retrying PutMedia (streamID:%s, retryCount: %d, err: %v)", p.streamID, i, err)
 			ret, err = p.putMediaRaw(ctxErr, bytes.NewReader(backup.Bytes()), opts)
 			if err == nil {
 				break
