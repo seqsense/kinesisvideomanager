@@ -21,6 +21,9 @@ import (
 type multiError []error
 
 func (me multiError) Error() string {
+	if len(me) == 1 {
+		return me[0].Error()
+	}
 	str := "multiple errors:"
 	for _, e := range me {
 		str += " '" + e.Error() + "'"
