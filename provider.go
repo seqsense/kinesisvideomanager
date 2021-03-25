@@ -309,19 +309,25 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	}
 
 	r, wOutRaw := io.Pipe()
-	// Ignore error when http request body is closed.
-	// Continue marshalling whole fragment and retry sending later.
-	noErrWriter := &ignoreErrWriter{Writer: wOutRaw}
-
-	wOutBuf := bufio.NewWriter(noErrWriter)
-	w := io.Writer(wOutBuf)
+	wOutBuf := bufio.NewWriter(wOutRaw)
+	writeErr := func() error { return nil }
+	var w io.Writer
 	var backup *bytes.Buffer
+
 	if opts.retryCount > 0 {
+		// Ignore error when http request body is closed.
+		// Continue marshalling whole fragment and retry sending later.
+		noErrWriter := &ignoreErrWriter{Writer: wOutBuf}
+		w = io.Writer(noErrWriter)
+		writeErr = noErrWriter.Err
+
 		// Take copy of the fragment.
 		backup = p.bufferPool.Get().(*bytes.Buffer)
 		defer p.bufferPool.Put(backup)
 		backup.Reset()
 		w = io.MultiWriter(wOutBuf, backup)
+	} else {
+		w = io.Writer(wOutBuf)
 	}
 
 	chErr := make(chan error)
@@ -351,7 +357,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		if errMarshal != nil {
 			err = append(err, errMarshal)
 		}
-		if errWriter := noErrWriter.Err(); errWriter != nil {
+		if errWriter := writeErr(); errWriter != nil {
 			err = append(err, errWriter)
 		}
 		if len(err) == 0 {
