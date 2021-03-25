@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,18 +37,15 @@ import (
 var testData = [][]byte{{0x01, 0x02}}
 
 func TestProvider(t *testing.T) {
-	dropped := make(map[uint64]bool)
-	var disconnected bool
-
 	testCases := map[string]struct {
-		mockServerOpts func(func()) []kvsm.KinesisVideoServerOption
+		mockServerOpts func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption
 		putMediaOpts   []kvm.PutMediaOption
 	}{
 		"NoError": {
-			mockServerOpts: func(func()) []kvsm.KinesisVideoServerOption { return nil },
+			mockServerOpts: func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption { return nil },
 		},
 		"ErrorRetry": {
-			mockServerOpts: func(func()) []kvsm.KinesisVideoServerOption {
+			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
 						if !dropped[timecode] {
@@ -65,11 +63,11 @@ func TestProvider(t *testing.T) {
 			},
 		},
 		"DisconnectRetry": {
-			mockServerOpts: func(disconnect func()) []kvsm.KinesisVideoServerOption {
+			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
-						if !disconnected {
-							disconnected = true
+						if !*disconnected {
+							*disconnected = true
 							t.Logf("Disconnect injected: timecode=%d", timecode)
 							disconnect()
 							return false
@@ -87,9 +85,15 @@ func TestProvider(t *testing.T) {
 	for name, testCase := range testCases {
 		testCase := testCase
 		t.Run(name, func(t *testing.T) {
+			var wg sync.WaitGroup
+			defer wg.Wait()
+
+			dropped := make(map[uint64]bool)
+			var disconnected bool
+
 			var server *kvsm.KinesisVideoServer
 			server = kvsm.NewKinesisVideoServer(testCase.mockServerOpts(
-				func() {
+				t, dropped, &disconnected, func() {
 					server.CloseClientConnections()
 				},
 			)...)
@@ -105,8 +109,12 @@ func TestProvider(t *testing.T) {
 				10001, // switch to the next fragment here
 				10002,
 			}
+			wg.Add(1)
 			go func() {
-				defer close(ch)
+				defer func() {
+					close(ch)
+					wg.Done()
+				}()
 				for _, tc := range timecodes {
 					ch <- &kvm.BlockWithBaseTimecode{
 						Timecode: tc,
@@ -118,8 +126,12 @@ func TestProvider(t *testing.T) {
 			chResp := make(chan kvm.FragmentEvent)
 			var response []kvm.FragmentEvent
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			wg.Add(1)
 			go func() {
-				defer cancel()
+				defer func() {
+					cancel()
+					wg.Done()
+				}()
 				for {
 					select {
 					case r, ok := <-chResp:
@@ -198,6 +210,9 @@ func TestProvider(t *testing.T) {
 }
 
 func TestProvider_WithHttpClient(t *testing.T) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
 	blockTime := 2 * time.Second
 	server := kvsm.NewKinesisVideoServer(kvsm.WithBlockTime(blockTime))
 	defer server.Close()
@@ -209,8 +224,12 @@ func TestProvider_WithHttpClient(t *testing.T) {
 		1000,
 		10001,
 	}
+	wg.Add(1)
 	go func() {
-		defer close(ch)
+		defer func() {
+			close(ch)
+			wg.Done()
+		}()
 		for _, tc := range timecodes {
 			ch <- &kvm.BlockWithBaseTimecode{
 				Timecode: tc,
@@ -220,7 +239,9 @@ func TestProvider_WithHttpClient(t *testing.T) {
 	}()
 
 	chResp := make(chan kvm.FragmentEvent)
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for range chResp {
 		}
 	}()
