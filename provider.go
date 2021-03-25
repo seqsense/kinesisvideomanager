@@ -329,36 +329,33 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		w = io.Writer(wOutBuf)
 	}
 
-	chErr := make(chan error)
+	var errFlush, errMarshal error
+	chMarshalDone := make(chan struct{})
 	go func() {
 		defer func() {
-			close(chErr)
+			close(chMarshalDone)
 			wOutRaw.CloseWithError(io.EOF)
 		}()
-
 		if err := ebml.Marshal(&data, w); err != nil {
-			chErr <- fmt.Errorf("ebml marshalling: %w", err)
+			errMarshal = fmt.Errorf("ebml marshalling: %w", err)
 			return
 		}
 		if err := wOutBuf.Flush(); err != nil {
-			chErr <- fmt.Errorf("buffer flushing: %w", err)
-			return
+			errFlush = fmt.Errorf("flushing buffer: %w", err)
 		}
 	}()
 	ret, errPutMedia := p.putMediaRaw(r, opts)
-	errMarshal := <-chErr
+
+	if errMarshal != nil {
+		// Marshal error is not recoverable.
+		return nil, errMarshal
+	}
 
 	genError := func() error {
 		var err multiError
-		if errPutMedia != nil {
-			err = append(err, errPutMedia)
-		}
-		if errMarshal != nil {
-			err = append(err, errMarshal)
-		}
-		if errWriter := writeErr(); errWriter != nil {
-			err = append(err, errWriter)
-		}
+		err.Add(errPutMedia)
+		err.Add(errFlush)
+		err.Add(writeErr())
 		if len(err) == 0 {
 			return nil
 		}
@@ -367,6 +364,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 
 	err := genError()
 	if err != nil && opts.retryCount > 0 {
+		errFlush = nil // bufio.Writer is bypassed on retry
 		interval := opts.retryIntervalBase
 		for i := 0; i < opts.retryCount; i++ {
 			time.Sleep(interval)

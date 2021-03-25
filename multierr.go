@@ -48,3 +48,10 @@ func (me multiError) As(target interface{}) bool {
 	}
 	return false
 }
+
+func (me *multiError) Add(err error) {
+	if err == nil {
+		return
+	}
+	*me = append(*me, err)
+}
