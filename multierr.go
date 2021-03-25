@@ -20,6 +20,17 @@ import (
 
 type multiError []error
 
+func newMultiError(errs ...error) error {
+	var err multiError
+	for _, e := range errs {
+		err.Add(e)
+	}
+	if len(err) == 0 {
+		return nil
+	}
+	return err
+}
+
 func (me multiError) Error() string {
 	if len(me) == 1 {
 		return me[0].Error()

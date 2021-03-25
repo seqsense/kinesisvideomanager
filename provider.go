@@ -351,27 +351,15 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		return nil, errMarshal
 	}
 
-	genError := func() error {
-		var err multiError
-		err.Add(errPutMedia)
-		err.Add(errFlush)
-		err.Add(writeErr())
-		if len(err) == 0 {
-			return nil
-		}
-		return err
-	}
-
-	err := genError()
+	err := newMultiError(errPutMedia, errFlush, writeErr())
 	if err != nil && opts.retryCount > 0 {
-		errFlush = nil // bufio.Writer is bypassed on retry
 		interval := opts.retryIntervalBase
 		for i := 0; i < opts.retryCount; i++ {
 			time.Sleep(interval)
 
 			Logger().Infof("Retrying PutMedia (streamID:%s, retryCount:%d, err:%v)", p.streamID, i, err)
-			ret, errPutMedia = p.putMediaRaw(bytes.NewReader(backup.Bytes()), opts)
-			if err = genError(); err == nil {
+			ret, err = p.putMediaRaw(bytes.NewReader(backup.Bytes()), opts)
+			if err == nil {
 				break
 			}
 			interval *= 2
