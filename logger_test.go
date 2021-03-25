@@ -25,13 +25,8 @@ func init() {
 type testLogger struct {
 }
 
-func (n *testLogger) Debug(args ...interface{}) {
-	log.Print(args...)
-}
-
-func (n *testLogger) Debugf(format string, args ...interface{}) {
-	log.Printf(format, args...)
-}
+func (n *testLogger) Debug(args ...interface{})                 {}
+func (n *testLogger) Debugf(format string, args ...interface{}) {}
 
 func (n *testLogger) Info(args ...interface{}) {
 	log.Print(args...)
