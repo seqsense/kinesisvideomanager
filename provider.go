@@ -17,7 +17,6 @@ package kinesisvideomanager
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -309,44 +308,67 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		},
 	}
 
-	r, wOut := io.Pipe()
-	w := io.Writer(wOut)
+	r, wOutRaw := io.Pipe()
+	// Ignore error when http request body is closed.
+	// Continue marshalling whole fragment and retry sending later.
+	noErrWriter := &ignoreErrWriter{Writer: wOutRaw}
+
+	wOutBuf := bufio.NewWriter(noErrWriter)
+	w := io.Writer(wOutBuf)
 	var backup *bytes.Buffer
 	if opts.retryCount > 0 {
 		// Take copy of the fragment.
 		backup = p.bufferPool.Get().(*bytes.Buffer)
 		defer p.bufferPool.Put(backup)
 		backup.Reset()
-		w = io.MultiWriter(wOut, backup)
+		w = io.MultiWriter(wOutBuf, backup)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	ctxErr := &errContext{Context: ctx}
+	chErr := make(chan error)
 	go func() {
 		defer func() {
-			cancel()
-			wOut.CloseWithError(io.EOF)
+			close(chErr)
+			wOutRaw.CloseWithError(io.EOF)
 		}()
 
-		buf := bufio.NewWriter(w)
-		if err := ebml.Marshal(&data, buf); err != nil {
-			ctxErr.err = fmt.Errorf("ebml marshalling: %w", err)
+		if err := ebml.Marshal(&data, w); err != nil {
+			chErr <- fmt.Errorf("ebml marshalling: %w", err)
 			return
 		}
-		if err := buf.Flush(); err != nil {
-			ctxErr.err = fmt.Errorf("buffer flushing: %w", err)
+		if err := wOutBuf.Flush(); err != nil {
+			chErr <- fmt.Errorf("buffer flushing: %w", err)
 			return
 		}
 	}()
-	ret, err := p.putMediaRaw(ctxErr, r, opts)
+	ret, errPutMedia := p.putMediaRaw(r, opts)
+	errMarshal := <-chErr
+
+	genError := func() error {
+		var err multiError
+		if errPutMedia != nil {
+			err = append(err, errPutMedia)
+		}
+		if errMarshal != nil {
+			err = append(err, errMarshal)
+		}
+		if errWriter := noErrWriter.Err(); errWriter != nil {
+			err = append(err, errWriter)
+		}
+		if len(err) == 0 {
+			return nil
+		}
+		return err
+	}
+
+	err := genError()
 	if err != nil && opts.retryCount > 0 {
 		interval := opts.retryIntervalBase
 		for i := 0; i < opts.retryCount; i++ {
 			time.Sleep(interval)
 
 			Logger().Infof("Retrying PutMedia (streamID:%s, retryCount:%d, err:%v)", p.streamID, i, err)
-			ret, err = p.putMediaRaw(ctxErr, bytes.NewReader(backup.Bytes()), opts)
-			if err == nil {
+			ret, errPutMedia = p.putMediaRaw(bytes.NewReader(backup.Bytes()), opts)
+			if err = genError(); err == nil {
 				break
 			}
 			interval *= 2
@@ -355,16 +377,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	return ret, err
 }
 
-type errContext struct {
-	context.Context
-	err error
-}
-
-func (c *errContext) Err() error {
-	return c.err
-}
-
-func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
+func (p *Provider) putMediaRaw(r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
 	req, err := http.NewRequest("POST", p.endpoint, r)
 	if err != nil {
 		return nil, fmt.Errorf("creating http request: %w", err)
@@ -396,10 +409,6 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, opts *PutMediaO
 			return nil, fmt.Errorf("reading http response: %w", err)
 		}
 		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
-	}
-	<-ctx.Done()
-	if err := ctx.Err(); err != nil {
-		return nil, err
 	}
 	return res.Body, nil
 }
