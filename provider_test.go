@@ -37,23 +37,46 @@ var testData = [][]byte{{0x01, 0x02}}
 
 func TestProvider(t *testing.T) {
 	dropped := make(map[uint64]bool)
+	var disconnected bool
 
 	testCases := map[string]struct {
-		mockServerOpts []kvsm.KinesisVideoServerOption
+		mockServerOpts func(func()) []kvsm.KinesisVideoServerOption
 		putMediaOpts   []kvm.PutMediaOption
 	}{
-		"NoError": {},
+		"NoError": {
+			mockServerOpts: func(func()) []kvsm.KinesisVideoServerOption { return nil },
+		},
 		"ErrorRetry": {
-			mockServerOpts: []kvsm.KinesisVideoServerOption{
-				kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
-					if !dropped[timecode] {
-						dropped[timecode] = true
-						w.WriteHeader(500)
-						t.Logf("Error injected: timecode=%d", timecode)
-						return false
-					}
-					return true
-				}),
+			mockServerOpts: func(func()) []kvsm.KinesisVideoServerOption {
+				return []kvsm.KinesisVideoServerOption{
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						if !dropped[timecode] {
+							dropped[timecode] = true
+							w.WriteHeader(500)
+							t.Logf("Error injected: timecode=%d", timecode)
+							return false
+						}
+						return true
+					}),
+				}
+			},
+			putMediaOpts: []kvm.PutMediaOption{
+				kvm.WithPutMediaRetry(2, 100*time.Millisecond),
+			},
+		},
+		"DisconnectRetry": {
+			mockServerOpts: func(disconnect func()) []kvsm.KinesisVideoServerOption {
+				return []kvsm.KinesisVideoServerOption{
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						if !disconnected {
+							disconnected = true
+							t.Logf("Disconnect injected: timecode=%d", timecode)
+							disconnect()
+							return false
+						}
+						return true
+					}),
+				}
 			},
 			putMediaOpts: []kvm.PutMediaOption{
 				kvm.WithPutMediaRetry(2, 100*time.Millisecond),
@@ -64,7 +87,12 @@ func TestProvider(t *testing.T) {
 	for name, testCase := range testCases {
 		testCase := testCase
 		t.Run(name, func(t *testing.T) {
-			server := kvsm.NewKinesisVideoServer(testCase.mockServerOpts...)
+			var server *kvsm.KinesisVideoServer
+			server = kvsm.NewKinesisVideoServer(testCase.mockServerOpts(
+				func() {
+					server.CloseClientConnections()
+				},
+			)...)
 			defer server.Close()
 
 			pro := newProvider(t, server)
