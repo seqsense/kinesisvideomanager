@@ -318,14 +318,13 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		// Ignore error when http request body is closed.
 		// Continue marshalling whole fragment and retry sending later.
 		noErrWriter := &ignoreErrWriter{Writer: wOutBuf}
-		w = io.Writer(noErrWriter)
 		writeErr = noErrWriter.Err
 
 		// Take copy of the fragment.
 		backup = p.bufferPool.Get().(*bytes.Buffer)
 		defer p.bufferPool.Put(backup)
 		backup.Reset()
-		w = io.MultiWriter(wOutBuf, backup)
+		w = io.MultiWriter(noErrWriter, backup)
 	} else {
 		w = io.Writer(wOutBuf)
 	}
