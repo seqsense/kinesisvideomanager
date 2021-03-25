@@ -330,11 +330,11 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 
 		buf := bufio.NewWriter(w)
 		if err := ebml.Marshal(&data, buf); err != nil {
-			ctxErr.err = err
+			ctxErr.err = fmt.Errorf("ebml marshalling: %w", err)
 			return
 		}
 		if err := buf.Flush(); err != nil {
-			ctxErr.err = err
+			ctxErr.err = fmt.Errorf("buffer flushing: %w", err)
 			return
 		}
 	}()
@@ -367,7 +367,7 @@ func (c *errContext) Err() error {
 func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
 	req, err := http.NewRequest("POST", p.endpoint, r)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating http request: %w", err)
 	}
 	if p.streamID.StreamName() != nil {
 		req.Header.Set("x-amzn-stream-name", *p.streamID.StreamName())
@@ -384,16 +384,16 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, opts *PutMediaO
 		10*time.Minute, time.Now(),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("presigning request: %w", err)
 	}
 	res, err := opts.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sending http request: %w", err)
 	}
 	if res.StatusCode != 200 {
 		body, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reading http response: %w", err)
 		}
 		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}

@@ -16,6 +16,7 @@ package kinesisvideomanager_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -205,7 +206,8 @@ func TestProvider_WithHttpClient(t *testing.T) {
 		kvm.WithHttpClient(client),
 		kvm.OnError(func(e error) { err = e }),
 	)
-	if nerr, ok := err.(net.Error); !ok || !nerr.Timeout() {
+	var netErr net.Error
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
 		t.Fatalf("Err must be timeout error but %v", err)
 	}
 }
