@@ -346,6 +346,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	}()
 	ret, errPutMedia := p.putMediaRaw(r, opts)
 
+	<-chMarshalDone
 	if errMarshal != nil {
 		// Marshal error is not recoverable.
 		return nil, errMarshal
