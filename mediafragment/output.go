@@ -34,11 +34,22 @@ func NewFragmentIDs(ids ...string) FragmentIDs {
 	return ret
 }
 
+// Sort is alias of SortByFragmentNumber.
+//
+// Deprecated: use SortByFragmentNumber or SortByProducerTimestamp
 func (l *ListFragmentsOutput) Sort() {
-	sort.Sort(l)
+	l.SortByFragmentNumber()
 }
 
-func (l *ListFragmentsOutput) Len() int {
+func (l *ListFragmentsOutput) SortByFragmentNumber() {
+	sort.Sort(SortByFragmentNumber{l})
+}
+
+func (l *ListFragmentsOutput) SortByProducerTimestamp() {
+	sort.Sort(SortByProducerTimestamp{l})
+}
+
+func (l ListFragmentsOutput) Len() int {
 	return len(l.Fragments)
 }
 
@@ -46,8 +57,20 @@ func (l *ListFragmentsOutput) Swap(i, j int) {
 	l.Fragments[i], l.Fragments[j] = l.Fragments[j], l.Fragments[i]
 }
 
-func (l *ListFragmentsOutput) Less(i, j int) bool {
+type SortByFragmentNumber struct {
+	*ListFragmentsOutput
+}
+
+func (l SortByFragmentNumber) Less(i, j int) bool {
 	return *l.Fragments[i].FragmentNumber < *l.Fragments[j].FragmentNumber
+}
+
+type SortByProducerTimestamp struct {
+	*ListFragmentsOutput
+}
+
+func (l SortByProducerTimestamp) Less(i, j int) bool {
+	return (*l.Fragments[i].ProducerTimestamp).Before(*l.Fragments[j].ProducerTimestamp)
 }
 
 func (l *ListFragmentsOutput) FragmentIDs() FragmentIDs {
