@@ -373,8 +373,13 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 }
 
 func (p *Provider) putMediaRaw(r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
-	req, err := http.NewRequest("POST", p.endpoint, r)
+	rc, ok := r.(io.ReadCloser)
+	if !ok {
+		rc = &nopCloser{r}
+	}
+	req, err := http.NewRequest("POST", p.endpoint, rc)
 	if err != nil {
+		_ = rc.Close()
 		return nil, fmt.Errorf("creating http request: %w", err)
 	}
 	if p.streamID.StreamName() != nil {
@@ -392,6 +397,7 @@ func (p *Provider) putMediaRaw(r io.Reader, opts *PutMediaOptions) (io.ReadClose
 		10*time.Minute, time.Now(),
 	)
 	if err != nil {
+		_ = rc.Close()
 		return nil, fmt.Errorf("presigning request: %w", err)
 	}
 	res, err := opts.httpClient.Do(req)
