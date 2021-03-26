@@ -143,6 +143,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		producerStartTimestamp: "0",
 		connectionTimeout:      15 * time.Second,
 		onError:                func(err error) { Logger().Error(err) },
+		httpClient: http.Client{
+			Timeout: 15 * time.Second,
+		},
 	}
 	for _, o := range opts {
 		o(options)
@@ -345,7 +348,11 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		}
 	}()
 	ret, errPutMedia := p.putMediaRaw(r, opts)
+	if errPutMedia != nil {
+		_ = r.Close()
+	}
 
+	<-chMarshalDone
 	if errMarshal != nil {
 		// Marshal error is not recoverable.
 		return nil, errMarshal
@@ -358,7 +365,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 			time.Sleep(interval)
 
 			Logger().Infof("Retrying PutMedia (streamID:%s, retryCount:%d, err:%v)", p.streamID, i, err)
-			ret, err = p.putMediaRaw(bytes.NewReader(backup.Bytes()), opts)
+			ret, err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, opts)
 			if err == nil {
 				break
 			}
@@ -368,9 +375,10 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	return ret, err
 }
 
-func (p *Provider) putMediaRaw(r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
-	req, err := http.NewRequest("POST", p.endpoint, r)
+func (p *Provider) putMediaRaw(rc io.ReadCloser, opts *PutMediaOptions) (io.ReadCloser, error) {
+	req, err := http.NewRequest("POST", p.endpoint, rc)
 	if err != nil {
+		_ = rc.Close()
 		return nil, fmt.Errorf("creating http request: %w", err)
 	}
 	if p.streamID.StreamName() != nil {
@@ -388,6 +396,7 @@ func (p *Provider) putMediaRaw(r io.Reader, opts *PutMediaOptions) (io.ReadClose
 		10*time.Minute, time.Now(),
 	)
 	if err != nil {
+		_ = rc.Close()
 		return nil, fmt.Errorf("presigning request: %w", err)
 	}
 	res, err := opts.httpClient.Do(req)
