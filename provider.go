@@ -348,13 +348,11 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		}
 	}()
 	ret, errPutMedia := p.putMediaRaw(r, opts)
-
-	select {
-	case <-chMarshalDone:
-	case <-time.After(15 * time.Second):
-		println(fmt.Sprintf("%v %v %v", errPutMedia, errFlush, writeErr()))
-		panic("timeout")
+	if errPutMedia != nil {
+		_ = r.Close()
 	}
+
+	<-chMarshalDone
 	if errMarshal != nil {
 		// Marshal error is not recoverable.
 		return nil, errMarshal
@@ -367,7 +365,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 			time.Sleep(interval)
 
 			Logger().Infof("Retrying PutMedia (streamID:%s, retryCount:%d, err:%v)", p.streamID, i, err)
-			ret, err = p.putMediaRaw(bytes.NewReader(backup.Bytes()), opts)
+			ret, err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, opts)
 			if err == nil {
 				break
 			}
@@ -377,11 +375,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	return ret, err
 }
 
-func (p *Provider) putMediaRaw(r io.Reader, opts *PutMediaOptions) (io.ReadCloser, error) {
-	rc, ok := r.(io.ReadCloser)
-	if !ok {
-		rc = &nopCloser{r}
-	}
+func (p *Provider) putMediaRaw(rc io.ReadCloser, opts *PutMediaOptions) (io.ReadCloser, error) {
 	req, err := http.NewRequest("POST", p.endpoint, rc)
 	if err != nil {
 		_ = rc.Close()
