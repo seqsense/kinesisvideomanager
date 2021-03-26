@@ -143,6 +143,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		producerStartTimestamp: "0",
 		connectionTimeout:      15 * time.Second,
 		onError:                func(err error) { Logger().Error(err) },
+		httpClient: http.Client{
+			Timeout: 15 * time.Second,
+		},
 	}
 	for _, o := range opts {
 		o(options)
