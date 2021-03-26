@@ -349,7 +349,12 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	}()
 	ret, errPutMedia := p.putMediaRaw(r, opts)
 
-	<-chMarshalDone
+	select {
+	case <-chMarshalDone:
+	case <-time.After(15 * time.Second):
+		println(fmt.Sprintf("%v %v %v", errPutMedia, errFlush, writeErr()))
+		panic("timeout")
+	}
 	if errMarshal != nil {
 		// Marshal error is not recoverable.
 		return nil, errMarshal
