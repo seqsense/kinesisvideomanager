@@ -80,4 +80,35 @@ func TestListFragmentsOutput(t *testing.T) {
 			t.Errorf("Expected sort result:\n%v\ngot:\n%v", expected, data)
 		}
 	})
+	t.Run("Uniq", func(t *testing.T) {
+		data := &ListFragmentsOutput{
+			&kvam.ListFragmentsOutput{
+				Fragments: []*kvam.Fragment{
+					&kvam.Fragment{FragmentNumber: aws.String("1234566000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234566100"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: aws.Int64(30)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234567000"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(90)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234567100"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234567200"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(80)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100010, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234569000"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: aws.Int64(90)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234569100"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+				},
+			},
+		}
+		expected := &ListFragmentsOutput{
+			&kvam.ListFragmentsOutput{
+				Fragments: []*kvam.Fragment{
+					&kvam.Fragment{FragmentNumber: aws.String("1234566000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234567100"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100010, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+					&kvam.Fragment{FragmentNumber: aws.String("1234569100"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+				},
+			},
+		}
+
+		data.Uniq()
+		if !reflect.DeepEqual(expected, data) {
+			t.Errorf("Expected sort result:\n%v\ngot:\n%v", expected, data)
+		}
+	})
 }

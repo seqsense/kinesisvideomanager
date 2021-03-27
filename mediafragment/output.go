@@ -80,3 +80,28 @@ func (l *ListFragmentsOutput) FragmentIDs() FragmentIDs {
 	}
 	return ret
 }
+
+// Uniq removes duplicated fragments.
+// Fragments with same ProducerTimestamp excepting the longest one will be removed.
+// List of the fragments must be sorted by ProducerTimestamp before calling Uniq.
+func (l *ListFragmentsOutput) Uniq() {
+	uniqFragments := make([]*kvam.Fragment, 0, len(l.Fragments))
+	var longestFragment, prevFragment *kvam.Fragment
+	for i := 0; i < len(l.Fragments); i++ {
+		if prevFragment != nil && (*l.Fragments[i].ProducerTimestamp).Equal(*prevFragment.ProducerTimestamp) {
+			if longestFragment == nil || *longestFragment.FragmentLengthInMilliseconds < *l.Fragments[i].FragmentLengthInMilliseconds {
+				longestFragment = l.Fragments[i]
+			}
+		} else {
+			if longestFragment != nil {
+				uniqFragments = append(uniqFragments, longestFragment)
+			}
+			longestFragment = l.Fragments[i]
+		}
+		prevFragment = l.Fragments[i]
+	}
+	if longestFragment != nil {
+		uniqFragments = append(uniqFragments, longestFragment)
+	}
+	l.Fragments = uniqFragments
+}
