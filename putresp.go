@@ -16,6 +16,7 @@ package kinesisvideomanager
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 )
 
@@ -25,6 +26,19 @@ type FragmentEvent struct {
 	FragmentNumber   string // 158-bit number, handle as string
 	ErrorId          int
 	ErrorCode        string
+}
+
+func (e *FragmentEvent) IsError() bool {
+	return e.EventType == "ERROR"
+}
+
+func (e *FragmentEvent) Error() string {
+	if e.EventType != "ERROR" {
+		panic("non-error FragmentEvent is used as error")
+	}
+	return fmt.Sprintf("fragment event error: { Timecode: %d, FragmentNumber: %s, ErrorId: %d, ErrorCode: %s }",
+		e.FragmentTimecode, e.FragmentNumber, e.ErrorId, e.ErrorCode,
+	)
 }
 
 func parseFragmentEvent(r io.Reader) ([]FragmentEvent, error) {
