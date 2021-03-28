@@ -61,6 +61,9 @@ func TestProvider(t *testing.T) {
 						if !dropped[timecode] {
 							dropped[timecode] = true
 							w.WriteHeader(500)
+							if _, err := w.Write([]byte("Dummy error")); err != nil {
+								t.Error(err)
+							}
 							t.Logf("HTTP error injected: timecode=%d", timecode)
 							return false
 						}
@@ -80,6 +83,9 @@ func TestProvider(t *testing.T) {
 							time.Sleep(75 * time.Millisecond)
 							dropped[timecode] = true
 							w.WriteHeader(500)
+							if _, err := w.Write([]byte("Dummy error")); err != nil {
+								t.Error(err)
+							}
 							t.Logf("HTTP error injected: timecode=%d", timecode)
 							return false
 						}
@@ -97,8 +103,7 @@ func TestProvider(t *testing.T) {
 						defer mu.Unlock()
 						if !dropped[timecode] {
 							dropped[timecode] = true
-							_, err := w.Write([]byte(fmt.Sprintf(fragmentAckFmt, timecode)))
-							if err != nil {
+							if _, err := w.Write([]byte(fmt.Sprintf(fragmentAckFmt, timecode))); err != nil {
 								t.Error(err)
 							}
 							t.Logf("Kinesis error injected: timecode=%d", timecode)
@@ -119,8 +124,7 @@ func TestProvider(t *testing.T) {
 						if !dropped[timecode] {
 							time.Sleep(75 * time.Millisecond)
 							dropped[timecode] = true
-							_, err := w.Write([]byte(fmt.Sprintf(fragmentAckFmt, timecode)))
-							if err != nil {
+							if _, err := w.Write([]byte(fmt.Sprintf(fragmentAckFmt, timecode))); err != nil {
 								t.Error(err)
 							}
 							t.Logf("Kinesis error injected: timecode=%d", timecode)
