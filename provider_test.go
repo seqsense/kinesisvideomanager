@@ -43,6 +43,8 @@ func TestProvider(t *testing.T) {
 
 	fragmentAckFmt := `{"Acknowledgement":{"EventType":"ERROR","FragmentTimecode":%d,"FragmentNumber":91343852333754009371412493862204112772176002064,"ErrorId":5000}`
 
+	var mu sync.Mutex
+
 	testCases := map[string]struct {
 		mockServerOpts func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption
 		putMediaOpts   []kvm.PutMediaOption
@@ -54,6 +56,8 @@ func TestProvider(t *testing.T) {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						mu.Lock()
+						defer mu.Unlock()
 						if !dropped[timecode] {
 							dropped[timecode] = true
 							w.WriteHeader(500)
@@ -70,6 +74,8 @@ func TestProvider(t *testing.T) {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						mu.Lock()
+						defer mu.Unlock()
 						if !dropped[timecode] {
 							time.Sleep(75 * time.Millisecond)
 							dropped[timecode] = true
@@ -87,6 +93,8 @@ func TestProvider(t *testing.T) {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						mu.Lock()
+						defer mu.Unlock()
 						if !dropped[timecode] {
 							dropped[timecode] = true
 							_, err := w.Write([]byte(fmt.Sprintf(fragmentAckFmt, timecode)))
@@ -106,6 +114,8 @@ func TestProvider(t *testing.T) {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						mu.Lock()
+						defer mu.Unlock()
 						if !dropped[timecode] {
 							time.Sleep(75 * time.Millisecond)
 							dropped[timecode] = true
@@ -126,6 +136,8 @@ func TestProvider(t *testing.T) {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						mu.Lock()
+						defer mu.Unlock()
 						if !*disconnected {
 							*disconnected = true
 							t.Logf("Disconnect injected: timecode=%d", timecode)
@@ -142,6 +154,8 @@ func TestProvider(t *testing.T) {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						mu.Lock()
+						defer mu.Unlock()
 						if !*disconnected {
 							time.Sleep(75 * time.Millisecond)
 							*disconnected = true
