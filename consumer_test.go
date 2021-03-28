@@ -69,7 +69,7 @@ func TestConsumer(t *testing.T) {
 	}
 
 	ch := make(chan *kvm.BlockWithBaseTimecode)
-	var blocks []*kvm.BlockWithBaseTimecode
+	var blocks []kvm.BlockWithBaseTimecode
 	chTag := make(chan *kvm.Tag)
 	var tags []kvm.SimpleTag
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -83,7 +83,7 @@ func TestConsumer(t *testing.T) {
 				if !ok {
 					continue
 				}
-				blocks = append(blocks, b)
+				blocks = append(blocks, *b)
 			case t, ok := <-chTag:
 				if !ok {
 					return
@@ -107,7 +107,7 @@ func TestConsumer(t *testing.T) {
 	}
 
 	// check only second fragment was loaded
-	expectedBlocks := []*kvm.BlockWithBaseTimecode{
+	expectedBlocks := []kvm.BlockWithBaseTimecode{
 		{
 			Timecode: 2000,
 			Block:    newBlock(0),
@@ -119,7 +119,7 @@ func TestConsumer(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(expectedBlocks, blocks) {
-		t.Errorf("Unexpected Blocks\n expected:%+v\n actual%+v", expectedBlocks, blocks)
+		t.Errorf("Unexpected Blocks\nexpected:\n%+v\nactual:\n%+v", expectedBlocks, blocks)
 	}
 
 	expectedTags := []kvm.SimpleTag{
