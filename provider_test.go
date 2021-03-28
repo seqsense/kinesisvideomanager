@@ -37,6 +37,12 @@ import (
 var testData = [][]byte{{0x01, 0x02}}
 
 func TestProvider(t *testing.T) {
+	retryOpts := []kvm.PutMediaOption{
+		kvm.WithPutMediaRetry(2, 100*time.Millisecond),
+	}
+
+	fragmentAckFmt := `{"Acknowledgement":{"EventType":"ERROR","FragmentTimecode":%d,"FragmentNumber":91343852333754009371412493862204112772176002064,"ErrorId":5000}`
+
 	testCases := map[string]struct {
 		mockServerOpts func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption
 		putMediaOpts   []kvm.PutMediaOption
@@ -44,23 +50,77 @@ func TestProvider(t *testing.T) {
 		"NoError": {
 			mockServerOpts: func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption { return nil },
 		},
-		"ErrorRetry": {
+		"HTTPErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
 					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
 						if !dropped[timecode] {
 							dropped[timecode] = true
 							w.WriteHeader(500)
-							t.Logf("Error injected: timecode=%d", timecode)
+							t.Logf("HTTP error injected: timecode=%d", timecode)
 							return false
 						}
 						return true
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{
-				kvm.WithPutMediaRetry(2, 100*time.Millisecond),
+			putMediaOpts: retryOpts,
+		},
+		"DelayedHTTPErrorRetry": {
+			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
+				return []kvsm.KinesisVideoServerOption{
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						if !dropped[timecode] {
+							time.Sleep(75 * time.Millisecond)
+							dropped[timecode] = true
+							w.WriteHeader(500)
+							t.Logf("HTTP error injected: timecode=%d", timecode)
+							return false
+						}
+						return true
+					}),
+				}
 			},
+			putMediaOpts: retryOpts,
+		},
+		"KinesisErrorRetry": {
+			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
+				return []kvsm.KinesisVideoServerOption{
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						if !dropped[timecode] {
+							dropped[timecode] = true
+							_, err := w.Write([]byte(fmt.Sprintf(fragmentAckFmt, timecode)))
+							if err != nil {
+								t.Error(err)
+							}
+							t.Logf("Kinesis error injected: timecode=%d", timecode)
+							return false
+						}
+						return true
+					}),
+				}
+			},
+			putMediaOpts: retryOpts,
+		},
+		"DelayedKinesisErrorRetry": {
+			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
+				return []kvsm.KinesisVideoServerOption{
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						if !dropped[timecode] {
+							time.Sleep(75 * time.Millisecond)
+							dropped[timecode] = true
+							_, err := w.Write([]byte(fmt.Sprintf(fragmentAckFmt, timecode)))
+							if err != nil {
+								t.Error(err)
+							}
+							t.Logf("Kinesis error injected: timecode=%d", timecode)
+							return false
+						}
+						return true
+					}),
+				}
+			},
+			putMediaOpts: retryOpts,
 		},
 		"DisconnectRetry": {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
@@ -76,9 +136,24 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{
-				kvm.WithPutMediaRetry(2, 100*time.Millisecond),
+			putMediaOpts: retryOpts,
+		},
+		"DelayedDisconnectRetry": {
+			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
+				return []kvsm.KinesisVideoServerOption{
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+						if !*disconnected {
+							time.Sleep(75 * time.Millisecond)
+							*disconnected = true
+							t.Logf("Disconnect injected: timecode=%d", timecode)
+							disconnect()
+							return false
+						}
+						return true
+					}),
+				}
 			},
+			putMediaOpts: retryOpts,
 		},
 	}
 
