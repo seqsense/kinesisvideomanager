@@ -36,7 +36,7 @@ func (e *FragmentEvent) Error() string {
 	if e.EventType != "ERROR" {
 		panic("non-error FragmentEvent is used as error")
 	}
-	return fmt.Sprintf("fragment event error: { Timecode: %d, FragmentNumber: %s, ErrorId: %d, ErrorCode: %s }",
+	return fmt.Sprintf(`fragment event error: { Timecode: %d, FragmentNumber: %s, ErrorId: %d, ErrorCode: "%s" }`,
 		e.FragmentTimecode, e.FragmentNumber, e.ErrorId, e.ErrorCode,
 	)
 }
