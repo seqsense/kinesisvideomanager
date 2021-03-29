@@ -22,9 +22,11 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -58,6 +60,8 @@ type Provider struct {
 	tracks    []TrackEntry
 
 	bufferPool sync.Pool
+
+	outputValidMkv uint32
 }
 
 func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, error) {
@@ -343,6 +347,19 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	errPutMedia := p.putMediaRaw(r, chResp, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
+	}
+	if fe, ok := errPutMedia.(*FragmentEvent); ok {
+		if fe.ErrorId == 4006 {
+			Logger().Infof("INVALID_MKV_DATA: bytes marshalled: %d", backup.Len())
+			<-chMarshalDone
+			_ = os.WriteFile("/tmp/invalid_mkv_data.dump.mkv", backup.Bytes(), 0644)
+			atomic.StoreUint32(&p.outputValidMkv, 1)
+		}
+	}
+	if errPutMedia == nil && atomic.LoadUint32(&p.outputValidMkv) == 1 {
+		atomic.StoreUint32(&p.outputValidMkv, 0)
+		<-chMarshalDone
+		_ = os.WriteFile("/tmp/valid_mkv_data.dump.mkv", backup.Bytes(), 0644)
 	}
 
 	<-chMarshalDone
