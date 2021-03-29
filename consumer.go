@@ -58,10 +58,6 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 }
 
 func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opts ...GetMediaOption) (*Container, error) {
-	defer func() {
-		close(ch)
-		close(chTag)
-	}()
 
 	options := &GetMediaOptions{
 		startSelector: StartSelector{
@@ -113,6 +109,10 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 	chBlock := make(chan ebml.Block)
 	chTimecode := make(chan uint64)
 	go func() {
+		defer func() {
+			close(ch)
+			close(chTag)
+		}()
 		var baseTime uint64
 		for {
 			select {
@@ -133,6 +133,9 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 	data.Segment.Cluster.Timecode = chTimecode
 	data.Segment.Cluster.SimpleBlock = chBlock
 	data.Segment.Tags.Tag = chTag
+	defer func() {
+		close(chBlock)
+	}()
 	if err := ebml.Unmarshal(res.Body, data); err != nil {
 		return nil, err
 	}
