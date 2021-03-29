@@ -351,10 +351,27 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 			errFlush = fmt.Errorf("flushing buffer: %w", err)
 		}
 	}()
-	errPutMedia := p.putMediaRaw(r, chResp, opts)
+
+	chRespRaw := make(chan FragmentEvent)
+	var wgResp sync.WaitGroup
+	defer wgResp.Wait()
+	wgResp.Add(1)
+	go func() {
+		defer wgResp.Done()
+		for fe := range chRespRaw {
+			if fe.ErrorId == INVALID_MKV_DATA && conn.numBlock() == 0 {
+				// Ignore INVALID_MKV_DATA due to zero Block segment.
+				continue
+			}
+			chResp <- fe
+		}
+	}()
+
+	errPutMedia := p.putMediaRaw(r, chRespRaw, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
 	}
+	close(chRespRaw)
 
 	<-chMarshalDone
 	if errMarshal != nil {
