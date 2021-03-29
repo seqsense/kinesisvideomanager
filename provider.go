@@ -251,35 +251,22 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 			defer func() {
 				wg.Done()
 			}()
-			res, err := p.putMedia(seg.Timecode, seg.Block, seg.Tag, opts)
-			if res != nil {
-				defer res.Close()
-			}
+			err := p.putMedia(seg.Timecode, seg.Block, seg.Tag, chResp, opts)
 			if err != nil {
 				opts.onError(err)
 				return
-			}
-
-			var fes []FragmentEvent
-			fes, err = parseFragmentEvent(res)
-			if err != nil {
-				opts.onError(err)
-				return
-			}
-			for _, fe := range fes {
-				chResp <- fe
 			}
 		}()
 	}
 }
 
-func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag chan *Tag, opts *PutMediaOptions) (io.ReadCloser, error) {
+func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag chan *Tag, chResp chan FragmentEvent, opts *PutMediaOptions) error {
 	segmentUuid := opts.segmentUID
 	if segmentUuid == nil {
 		var err error
 		segmentUuid, err = generateRandomUUID()
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
@@ -353,7 +340,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 			errFlush = fmt.Errorf("flushing buffer: %w", err)
 		}
 	}()
-	ret, errPutMedia := p.putMediaRaw(r, opts)
+	errPutMedia := p.putMediaRaw(r, chResp, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
 	}
@@ -361,7 +348,7 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	<-chMarshalDone
 	if errMarshal != nil {
 		// Marshal error is not recoverable.
-		return nil, errMarshal
+		return errMarshal
 	}
 
 	err := newMultiError(errPutMedia, errFlush, writeErr())
@@ -375,21 +362,20 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 				p.streamID, i,
 				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
 			)
-			ret, err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, opts)
-			if err == nil {
+			if err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, chResp, opts); err == nil {
 				break
 			}
 			interval *= 2
 		}
 	}
-	return ret, err
+	return err
 }
 
-func (p *Provider) putMediaRaw(rc io.ReadCloser, opts *PutMediaOptions) (io.ReadCloser, error) {
+func (p *Provider) putMediaRaw(rc io.ReadCloser, chResp chan FragmentEvent, opts *PutMediaOptions) error {
 	req, err := http.NewRequest("POST", p.endpoint, rc)
 	if err != nil {
 		_ = rc.Close()
-		return nil, fmt.Errorf("creating http request: %w", err)
+		return fmt.Errorf("creating http request: %w", err)
 	}
 	if p.streamID.StreamName() != nil {
 		req.Header.Set("x-amzn-stream-name", *p.streamID.StreamName())
@@ -407,20 +393,35 @@ func (p *Provider) putMediaRaw(rc io.ReadCloser, opts *PutMediaOptions) (io.Read
 	)
 	if err != nil {
 		_ = rc.Close()
-		return nil, fmt.Errorf("presigning request: %w", err)
+		return fmt.Errorf("presigning request: %w", err)
 	}
 	res, err := opts.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("sending http request: %w", err)
+		return fmt.Errorf("sending http request: %w", err)
 	}
+	defer func() {
+		_ = res.Body.Close()
+	}()
+
 	if res.StatusCode != 200 {
 		body, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			return nil, fmt.Errorf("reading http response: %w", err)
+			return fmt.Errorf("reading http response: %w", err)
 		}
-		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
+		return fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
-	return res.Body, nil
+	var fes []FragmentEvent
+	fes, err = parseFragmentEvent(res.Body)
+	if err != nil {
+		return err
+	}
+	for _, fe := range fes {
+		if fe.IsError() && err == nil {
+			err = &fe
+		}
+		chResp <- fe
+	}
+	return err
 }
 
 func generateRandomUUID() ([]byte, error) {
