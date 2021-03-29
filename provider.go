@@ -22,6 +22,8 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
+	"regexp"
+	"strconv"
 	"sync"
 	"time"
 
@@ -37,7 +39,11 @@ import (
 
 const TimecodeScale = 1000000
 
-var immediateTimeout chan time.Time
+var (
+	immediateTimeout chan time.Time
+
+	regexAmzCredHeader = regexp.MustCompile(`X-Amz-(Credential|Security-Token|Signature)=[^&]*`)
+)
 
 func init() {
 	immediateTimeout = make(chan time.Time)
@@ -189,7 +195,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 					diff := int64(absTime - lastAbsTime)
 					if diff < 0 || diff > math.MaxInt16 {
 						Logger().Warnf(
-							"Invalid timecode (streamID:%s timecode:%d last:%d diff:%d)",
+							`Invalid timecode: { StreamID: "%s", Timecode: %d, last: %d, diff: %d }`,
 							p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
 						)
 						continue
@@ -197,12 +203,12 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				}
 
 				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
-					Logger().Debugf("Prepare next connection (streamID:%s)", p.streamID)
+					Logger().Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
 					nextConn = newConnection()
 					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
 				}
 				if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
-					Logger().Debugf("Switch to next connection (streamID:%s absTime:%d)", p.streamID, absTime)
+					Logger().Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
 					if conn != nil {
 						conn.close()
 					}
@@ -218,11 +224,11 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				case conn.Block <- bt.Block:
 					lastAbsTime = absTime
 				case <-timeout:
-					Logger().Warnf("Sending block timed out, clean connections (streamID:%s)", p.streamID)
+					Logger().Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 					cleanConnections()
 				}
 			case <-timeout:
-				Logger().Warnf("Receiving block timed out, clean connections (streamID:%s)", p.streamID)
+				Logger().Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 				cleanConnections()
 			}
 		}
@@ -351,7 +357,11 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 		for i := 0; i < opts.retryCount; i++ {
 			time.Sleep(interval)
 
-			Logger().Infof("Retrying PutMedia (streamID:%s, retryCount:%d, err:%v)", p.streamID, i, err)
+			Logger().Infof(
+				`Retrying PutMedia: { StreamID: "%s", RetryCount: %d, Err: %s }`,
+				p.streamID, i,
+				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
+			)
 			if err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, chResp, opts); err == nil {
 				break
 			}
