@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -106,6 +107,7 @@ type connection struct {
 	onceClose    sync.Once
 	onceInit     sync.Once
 	timeout      <-chan time.Time
+	nBlock       uint64
 }
 
 func newConnection() *connection {
@@ -142,6 +144,14 @@ func (c *connection) close() {
 	})
 }
 
+func (c *connection) countBlock() {
+	atomic.AddUint64(&c.nBlock, 1)
+}
+
+func (c *connection) numBlock() int {
+	return int(atomic.LoadUint64(&c.nBlock))
+}
+
 func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan FragmentEvent, opts ...PutMediaOption) {
 	options := &PutMediaOptions{
 		title:                  "kinesisvideomanager.Provider",
@@ -157,7 +167,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		o(options)
 	}
 
-	chBlockChWithBaseTimecode := make(chan *BlockChWithBaseTimecode)
+	chConnection := make(chan *connection)
 	go func() {
 		var conn, nextConn *connection
 		defer func() {
@@ -167,7 +177,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 			if nextConn != nil {
 				nextConn.close()
 			}
-			close(chBlockChWithBaseTimecode)
+			close(chConnection)
 		}()
 
 		lastAbsTime := uint64(0)
@@ -205,7 +215,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
 					Logger().Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
 					nextConn = newConnection()
-					chBlockChWithBaseTimecode <- nextConn.BlockChWithBaseTimecode
+					chConnection <- nextConn
 				}
 				if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
 					Logger().Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
@@ -222,6 +232,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				}
 				select {
 				case conn.Block <- bt.Block:
+					conn.countBlock()
 					lastAbsTime = absTime
 				case <-timeout:
 					Logger().Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
@@ -234,24 +245,24 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		}
 	}()
 
-	p.putSegments(chBlockChWithBaseTimecode, chResp, options)
+	p.putSegments(chConnection, chResp, options)
 }
 
-func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan FragmentEvent, opts *PutMediaOptions) {
+func (p *Provider) putSegments(ch chan *connection, chResp chan FragmentEvent, opts *PutMediaOptions) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
 		close(chResp)
 	}()
 
-	for seg := range ch {
-		seg := seg
+	for conn := range ch {
+		conn := conn
 		wg.Add(1)
 		go func() {
 			defer func() {
 				wg.Done()
 			}()
-			err := p.putMedia(seg.Timecode, seg.Block, seg.Tag, chResp, opts)
+			err := p.putMedia(conn, chResp, opts)
 			if err != nil {
 				opts.onError(err)
 				return
@@ -260,7 +271,7 @@ func (p *Provider) putSegments(ch chan *BlockChWithBaseTimecode, chResp chan Fra
 	}
 }
 
-func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag chan *Tag, chResp chan FragmentEvent, opts *PutMediaOptions) error {
+func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *PutMediaOptions) error {
 	segmentUuid := opts.segmentUID
 	if segmentUuid == nil {
 		var err error
@@ -295,11 +306,11 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 				TrackEntry: p.tracks,
 			},
 			Cluster: ClusterWrite{
-				Timecode:    baseTimecode,
-				SimpleBlock: ch,
+				Timecode:    conn.BlockChWithBaseTimecode.Timecode,
+				SimpleBlock: conn.BlockChWithBaseTimecode.Block,
 			},
 			Tags: Tags{
-				Tag: chTag,
+				Tag: conn.BlockChWithBaseTimecode.Tag,
 			},
 		},
 	}
@@ -340,15 +351,36 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 			errFlush = fmt.Errorf("flushing buffer: %w", err)
 		}
 	}()
-	errPutMedia := p.putMediaRaw(r, chResp, opts)
+
+	chRespRaw := make(chan FragmentEvent)
+	var wgResp sync.WaitGroup
+	defer wgResp.Wait()
+	wgResp.Add(1)
+	go func() {
+		defer wgResp.Done()
+		for fe := range chRespRaw {
+			if fe.ErrorId == INVALID_MKV_DATA && conn.numBlock() == 0 {
+				// Ignore INVALID_MKV_DATA due to zero Block segment.
+				continue
+			}
+			chResp <- fe
+		}
+	}()
+
+	errPutMedia := p.putMediaRaw(r, chRespRaw, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
 	}
+	close(chRespRaw)
 
 	<-chMarshalDone
 	if errMarshal != nil {
 		// Marshal error is not recoverable.
 		return errMarshal
+	}
+	if conn.numBlock() == 0 {
+		// No Block is written and INVALID_MKV_DATA is returned.
+		return nil
 	}
 
 	err := newMultiError(errPutMedia, errFlush, writeErr())
