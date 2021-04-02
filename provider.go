@@ -39,6 +39,8 @@ import (
 
 const TimecodeScale = 1000000
 
+const defaultFragmentHeadDumpLen = 512
+
 var (
 	immediateTimeout chan time.Time
 
@@ -96,6 +98,7 @@ type PutMediaOptions struct {
 	onError                func(error)
 	retryCount             int
 	retryIntervalBase      time.Duration
+	fragmentHeadDumpLen    int
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -149,6 +152,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		producerStartTimestamp: "0",
 		connectionTimeout:      15 * time.Second,
 		onError:                func(err error) { Logger().Error(err) },
+		fragmentHeadDumpLen:    defaultFragmentHeadDumpLen,
 		httpClient: http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -343,6 +347,14 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	errPutMedia := p.putMediaRaw(r, chResp, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
+		if fe, ok := errPutMedia.(*FragmentEvent); ok && opts.retryCount > 0 {
+			bb := backup.Bytes()
+			if len(bb) > opts.fragmentHeadDumpLen {
+				fe.fragmentHead = bb[:opts.fragmentHeadDumpLen]
+			} else {
+				fe.fragmentHead = bb
+			}
+		}
 	}
 
 	<-chMarshalDone
@@ -455,6 +467,14 @@ func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption
 func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.connectionTimeout = timeout
+	}
+}
+
+// WithFragmentHeadDumpLen sets fragment data head dump length embedded to the FragmentEvent error message.
+// Data dump is enabled only if PutMediaRetry is enabled.
+func WithFragmentHeadDumpLen(n int) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.fragmentHeadDumpLen = n
 	}
 }
 
