@@ -36,6 +36,13 @@ func TestFragmentEvent(t *testing.T) {
 		if s := fe[0].Error(); s != expected {
 			t.Errorf("Expected error string:\n%s\ngot:\n%s", expected, s)
 		}
+
+		fe[0].fragmentHead = []byte("test")
+
+		expected2 := `fragment event error: { Timecode: 12345, FragmentNumber: 91343852333754009371412493862204112772176002064, ErrorId: 5000, ErrorCode: "DUMMY_ERROR", Data: "dGVzdA" }`
+		if s := fe[0].Error(); s != expected2 {
+			t.Errorf("Expected error string:\n%s\ngot:\n%s", expected2, s)
+		}
 	})
 	t.Run("ParseError", func(t *testing.T) {
 		_, err := parseFragmentEvent(strings.NewReader("{"))

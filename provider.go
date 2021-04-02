@@ -97,6 +97,7 @@ type PutMediaOptions struct {
 	onError                func(error)
 	retryCount             int
 	retryIntervalBase      time.Duration
+	fragmentHeadDumpLen    int
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -397,6 +398,14 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 			if err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, chResp, opts); err == nil {
 				break
 			}
+			if fe, ok := err.(*FragmentEvent); ok && opts.fragmentHeadDumpLen > 0 {
+				bb := backup.Bytes()
+				if len(bb) > opts.fragmentHeadDumpLen {
+					fe.fragmentHead = bb[:opts.fragmentHeadDumpLen]
+				} else {
+					fe.fragmentHead = bb
+				}
+			}
 			interval *= 2
 		}
 	}
@@ -487,6 +496,15 @@ func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption
 func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.connectionTimeout = timeout
+	}
+}
+
+// WithFragmentHeadDumpLen sets fragment data head dump length embedded to the FragmentEvent error message.
+// Data dump is enabled only if PutMediaRetry is enabled.
+// Set zero to disable.
+func WithFragmentHeadDumpLen(n int) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.fragmentHeadDumpLen = n
 	}
 }
 
