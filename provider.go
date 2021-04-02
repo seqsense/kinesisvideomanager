@@ -344,14 +344,6 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 	errPutMedia := p.putMediaRaw(r, chResp, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
-		if fe, ok := errPutMedia.(*FragmentEvent); ok && opts.retryCount > 0 && opts.fragmentHeadDumpLen > 0 {
-			bb := backup.Bytes()
-			if len(bb) > opts.fragmentHeadDumpLen {
-				fe.fragmentHead = bb[:opts.fragmentHeadDumpLen]
-			} else {
-				fe.fragmentHead = bb
-			}
-		}
 	}
 
 	<-chMarshalDone
@@ -373,6 +365,14 @@ func (p *Provider) putMedia(baseTimecode chan uint64, ch chan ebml.Block, chTag 
 			)
 			if err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, chResp, opts); err == nil {
 				break
+			}
+			if fe, ok := err.(*FragmentEvent); ok && opts.fragmentHeadDumpLen > 0 {
+				bb := backup.Bytes()
+				if len(bb) > opts.fragmentHeadDumpLen {
+					fe.fragmentHead = bb[:opts.fragmentHeadDumpLen]
+				} else {
+					fe.fragmentHead = bb
+				}
 			}
 			interval *= 2
 		}

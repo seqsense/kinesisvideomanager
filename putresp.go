@@ -48,6 +48,10 @@ func (e *FragmentEvent) Error() string {
 	)
 }
 
+func (e *FragmentEvent) Dump() []byte {
+	return e.fragmentHead
+}
+
 func parseFragmentEvent(r io.Reader) ([]FragmentEvent, error) {
 	dec := json.NewDecoder(r)
 	var ret []FragmentEvent
