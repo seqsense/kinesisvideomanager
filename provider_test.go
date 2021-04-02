@@ -39,9 +39,8 @@ var testData = [][]byte{{0x01, 0x02}}
 func TestProvider(t *testing.T) {
 	var mu sync.Mutex
 
-	retryOpts := []kvm.PutMediaOption{
-		kvm.WithPutMediaRetry(2, 100*time.Millisecond),
-	}
+	retryOpt := kvm.WithPutMediaRetry(2, 100*time.Millisecond)
+	dumpOpt := kvm.WithFragmentHeadDumpLen(512)
 
 	fragmentEventFmt := `{"EventType":"ERROR","FragmentTimecode":%d,"FragmentNumber":"91343852333754009371412493862204112772176002064","ErrorId":5000,"ErrorCode":"DUMMY_ERROR"}`
 
@@ -91,7 +90,7 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: retryOpts,
+			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected1},
 		},
 		"DelayedHTTPErrorRetry": {
@@ -114,7 +113,7 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: retryOpts,
+			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected1},
 		},
 		"KinesisErrorRetry": {
@@ -135,7 +134,7 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: retryOpts,
+			putMediaOpts: []kvm.PutMediaOption{retryOpt, dumpOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected0, expected1, expected1},
 		},
 		"DelayedKinesisErrorRetry": {
@@ -157,7 +156,7 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: retryOpts,
+			putMediaOpts: []kvm.PutMediaOption{retryOpt, dumpOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected0, expected1, expected1},
 		},
 		"DisconnectRetry": {
@@ -176,7 +175,7 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: retryOpts,
+			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected1},
 		},
 		"DelayedDisconnectRetry": {
@@ -196,7 +195,7 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: retryOpts,
+			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected1},
 		},
 	}
