@@ -332,7 +332,7 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 		backup = p.bufferPool.Get().(*bytes.Buffer)
 		defer p.bufferPool.Put(backup)
 		backup.Reset()
-		w = io.MultiWriter(noErrWriter, backup)
+		w = io.MultiWriter(backup, noErrWriter)
 	} else {
 		w = io.Writer(wOutBuf)
 	}

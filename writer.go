@@ -28,11 +28,10 @@ func (w *ignoreErrWriter) Write(b []byte) (int, error) {
 	if err := w.err.Load(); err != nil {
 		return len(b), nil
 	}
-	n, err := w.Writer.Write(b)
-	if err != nil {
+	if _, err := w.Writer.Write(b); err != nil {
 		w.err.Store(err)
 	}
-	return n, nil
+	return len(b), nil
 }
 
 func (w *ignoreErrWriter) Err() error {

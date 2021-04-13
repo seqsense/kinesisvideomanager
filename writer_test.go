@@ -48,7 +48,7 @@ func TestIgnoreErrWriter(t *testing.T) {
 		dummyErr := errors.New("test")
 		w := &ignoreErrWriter{Writer: &dummyWriter{err: dummyErr}}
 		n, err := w.Write(make([]byte, 10))
-		if n != 0 {
+		if n != 10 {
 			t.Error("Write length differs")
 		}
 		if err != nil {
