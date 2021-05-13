@@ -34,10 +34,16 @@
         "^github.com/golang/protobuf",
         "^google.golang.org/grpc"
       ],
-      "separateMinorPatch": true,
-      "patch": {
-        "automerge": true
-      }
+      "separateMinorPatch": true
+    },
+    {
+      "matchPackagePatterns": [
+        "^github.com/aws/aws-sdk-go",
+        "^github.com/golang/protobuf",
+        "^google.golang.org/grpc"
+      ],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
     }
   ],
   "timezone": "Asia/Tokyo"
