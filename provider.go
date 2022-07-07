@@ -155,12 +155,13 @@ func (c *connection) numBlock() int {
 }
 
 func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan FragmentEvent, opts ...PutMediaOption) {
-	options := &PutMediaOptions{
+	var options *PutMediaOptions
+	options = &PutMediaOptions{
 		title:                  "kinesisvideomanager.Provider",
 		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
 		producerStartTimestamp: "0",
 		connectionTimeout:      15 * time.Second,
-		onError:                func(err error) { Logger().Error(err) },
+		onError:                func(err error) { options.logger.Error(err) },
 		httpClient: http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -207,7 +208,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				if lastAbsTime != 0 {
 					diff := int64(absTime - lastAbsTime)
 					if diff < 0 || diff > math.MaxInt16 {
-						Logger().Warnf(
+						options.logger.Warnf(
 							`Invalid timecode: { StreamID: "%s", Timecode: %d, last: %d, diff: %d }`,
 							p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
 						)
@@ -216,12 +217,12 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				}
 
 				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
-					Logger().Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
+					options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
 					nextConn = newConnection()
 					chConnection <- nextConn
 				}
 				if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
-					Logger().Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
+					options.logger.Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
 					if conn != nil {
 						conn.close()
 					}
@@ -238,11 +239,11 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 					conn.countBlock()
 					lastAbsTime = absTime
 				case <-timeout:
-					Logger().Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
+					options.logger.Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 					cleanConnections()
 				}
 			case <-timeout:
-				Logger().Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
+				options.logger.Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 				cleanConnections()
 			}
 		}
@@ -392,7 +393,7 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 		for i := 0; i < opts.retryCount; i++ {
 			time.Sleep(interval)
 
-			Logger().Infof(
+			opts.logger.Infof(
 				`Retrying PutMedia: { StreamID: "%s", RetryCount: %d, Err: %s }`,
 				p.streamID, i,
 				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
