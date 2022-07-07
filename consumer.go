@@ -63,7 +63,6 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 		startSelector: StartSelector{
 			StartSelectorType: StartSelectorTypeNow,
 		},
-		logger: Logger(),
 	}
 	for _, o := range opts {
 		o(options)
@@ -158,7 +157,6 @@ type GetMediaBody struct {
 
 type GetMediaOptions struct {
 	startSelector StartSelector
-	logger        LoggerIF
 }
 
 type GetMediaOption func(*GetMediaOptions)
@@ -186,11 +184,5 @@ func WithStartSelectorContinuationToken(token string) GetMediaOption {
 			StartSelectorType: StartSelectorTypeContinuationToken,
 			ContinuationToken: token,
 		}
-	}
-}
-
-func WithGetMediaLogger(logger LoggerIF) GetMediaOption {
-	return func(p *GetMediaOptions) {
-		p.logger = logger
 	}
 }
