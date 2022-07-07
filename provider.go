@@ -98,6 +98,7 @@ type PutMediaOptions struct {
 	retryCount             int
 	retryIntervalBase      time.Duration
 	fragmentHeadDumpLen    int
+	logger                 LoggerIF
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -163,6 +164,7 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		httpClient: http.Client{
 			Timeout: 15 * time.Second,
 		},
+		logger: Logger(),
 	}
 	for _, o := range opts {
 		o(options)
@@ -530,5 +532,11 @@ func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.retryCount = count
 		p.retryIntervalBase = intervalBase
+	}
+}
+
+func WithPutMediaLogger(logger LoggerIF) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.logger = logger
 	}
 }
