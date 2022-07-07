@@ -480,6 +480,49 @@ func TestProvider_WithHttpClient(t *testing.T) {
 	}
 }
 
+func TestProvider_WithPutMediaLogger(t *testing.T) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	server := kvsm.NewKinesisVideoServer()
+	defer server.Close()
+
+	pro := newProvider(t, server)
+
+	ch := make(chan *kvm.BlockWithBaseTimecode)
+	wg.Add(1)
+	go func() {
+		defer func() {
+			close(ch)
+			wg.Done()
+		}()
+		ch <- &kvm.BlockWithBaseTimecode{
+			Timecode: 1000,
+			Block:    newBlock(0),
+		}
+		ch <- &kvm.BlockWithBaseTimecode{
+			Timecode: 1000,
+			Block:    newBlock(-100),
+		}
+	}()
+
+	chResp := make(chan kvm.FragmentEvent)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range chResp {
+		}
+	}()
+
+	var logger dummyWarnfLogger
+	pro.PutMedia(ch, chResp, kvm.WithPutMediaLogger(&logger), kvm.OnError(func(error) {}))
+
+	expected := `Invalid timecode: { StreamID: "test-stream", Timecode: 900, last: 1000, diff: -100 }`
+	if expected != logger.lastErr {
+		t.Errorf("Expected log: '%s', got: '%s'", expected, logger.lastErr)
+	}
+}
+
 func newProvider(t *testing.T, server *kvsm.KinesisVideoServer) *kvm.Provider {
 	cfg := &aws.Config{
 		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
@@ -507,6 +550,20 @@ func newBlock(timecode int16) ebml.Block {
 		Data:        testData,
 	}
 }
+
 func newTags(tags []kvm.SimpleTag) kvsm.TagsTest {
 	return kvsm.TagsTest{Tag: []kvm.Tag{{SimpleTag: tags}}}
+}
+
+type dummyWarnfLogger struct {
+	kvm.LoggerIF
+
+	lastErr string
+}
+
+func (l *dummyWarnfLogger) Warnf(format string, args ...interface{}) {
+	l.lastErr = fmt.Sprintf(format, args...)
+}
+
+func (l *dummyWarnfLogger) Debugf(format string, args ...interface{}) {
 }
