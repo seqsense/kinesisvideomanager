@@ -86,8 +86,11 @@ func main() {
 		data := &kvm.BlockWithBaseTimecode{
 			Timecode: t,
 			Block: ebml.Block{
-				1, 0, true, false, ebml.LacingNo, false,
-				[][]byte{b},
+				TrackNumber: 1,
+				Timecode:    0,
+				Keyframe:    true,
+				Lacing:      ebml.LacingNo,
+				Data:        [][]byte{b},
 			},
 		}
 		// log.Printf("write: %v", data)
@@ -105,8 +108,5 @@ func main() {
 		}
 	}()
 
-	err = pro.PutMedia(ch, chResp)
-	if err != nil {
-		log.Printf("failed: %v", err)
-	}
+	pro.PutMedia(ch, chResp)
 }
