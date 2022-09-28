@@ -20,10 +20,13 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Vet
+        run: go vet ./...
       - name: Test
-        run: |
-          go test ./... -v -coverprofile=cover.out -covermode atomic -coverpkg ./...
-          go vet ./...
+        run: go test ./... -v -coverprofile=cover.out -covermode atomic -coverpkg ./...
+      - name: Build example
+        working-directory: examples
+        run: go build ./...
 
       - uses: codecov/codecov-action@v3
         with:
