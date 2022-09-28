@@ -523,6 +523,53 @@ func TestProvider_WithPutMediaLogger(t *testing.T) {
 	}
 }
 
+func TestProvider_WithBlockWriterReceiver(t *testing.T) {
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	server := kvsm.NewKinesisVideoServer()
+	defer server.Close()
+
+	pro := newProvider(t, server)
+
+	ch := make(chan *kvm.BlockWithBaseTimecode)
+	defer func() {
+		close(ch)
+	}()
+
+	chResp := make(chan kvm.FragmentEvent)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for range chResp {
+		}
+	}()
+
+	var writer kvm.BlockWriter
+	writerReceived := make(chan struct{})
+	writerReceiver := func(w kvm.BlockWriter) {
+		writer = w
+		close(writerReceived)
+	}
+	go func() {
+		pro.PutMedia(ch, chResp, kvm.WithBlockWriterReceiver(writerReceiver), kvm.OnError(func(error) {}))
+	}()
+	<-writerReceived
+
+	if err := writer.Write(&kvm.BlockWithBaseTimecode{
+		Timecode: 1000,
+		Block:    newBlock(0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Write(&kvm.BlockWithBaseTimecode{
+		Timecode: 1000,
+		Block:    newBlock(-100),
+	}); !errors.Is(err, kvm.ErrInvalidTimecode) {
+		t.Fatalf("Expected '%v', got: '%v'", kvm.ErrInvalidTimecode, err)
+	}
+}
+
 func newProvider(t *testing.T, server *kvsm.KinesisVideoServer) *kvm.Provider {
 	cfg := &aws.Config{
 		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
@@ -559,6 +606,10 @@ type dummyWarnfLogger struct {
 	kvm.LoggerIF
 
 	lastErr string
+}
+
+func (l *dummyWarnfLogger) Warn(args ...interface{}) {
+	l.lastErr = fmt.Sprint(args...)
 }
 
 func (l *dummyWarnfLogger) Warnf(format string, args ...interface{}) {
