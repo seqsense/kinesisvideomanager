@@ -14,6 +14,9 @@ jobs:
         go-version:
           - 1.15
           - 1.16
+          - 1.17
+          - 1.18
+          - 1.19
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -24,11 +27,25 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./... -v -coverprofile=cover.out -covermode atomic -coverpkg ./...
-      - name: Build example
-        working-directory: examples
-        run: go build ./...
 
       - uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./cover.out
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+      - name: Install deps
+        run: |
+          apt-get update -qq
+          apt-get install --no-install-recommends -y \
+            libgstreamer1.0-dev
+
+      - name: Build example
+        working-directory: examples
+        run: go build ./...
