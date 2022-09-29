@@ -17,6 +17,7 @@ package kinesisvideomanager
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -45,6 +47,8 @@ var (
 
 	regexAmzCredHeader = regexp.MustCompile(`X-Amz-(Credential|Security-Token|Signature)=[^&]*`)
 )
+
+var ErrInvalidTimecode = errors.New("invalid timecode")
 
 func init() {
 	immediateTimeout = make(chan time.Time)
@@ -86,6 +90,16 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 	}, nil
 }
 
+type BlockWriter interface {
+	Write(*BlockWithBaseTimecode) error
+}
+
+type blockWriterFunc func(*BlockWithBaseTimecode) error
+
+func (f blockWriterFunc) Write(bt *BlockWithBaseTimecode) error {
+	return f(bt)
+}
+
 type PutMediaOptions struct {
 	segmentUID             []byte
 	title                  string
@@ -99,6 +113,7 @@ type PutMediaOptions struct {
 	retryIntervalBase      time.Duration
 	fragmentHeadDumpLen    int
 	logger                 LoggerIF
+	blockWriterReceiver    func(BlockWriter)
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -171,9 +186,64 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		o(options)
 	}
 
+	var conn, nextConn *connection
+	var lastAbsTime uint64
+	var timeout <-chan time.Time
 	chConnection := make(chan *connection)
+	cleanConnections := func() {
+		conn.close()
+		conn = nil
+		if nextConn != nil {
+			nextConn.close()
+			nextConn = nil
+		}
+		lastAbsTime = 0
+	}
+	write := func(bt *BlockWithBaseTimecode) error {
+		absTime := uint64(bt.AbsTimecode())
+		if lastAbsTime != 0 {
+			diff := int64(absTime - lastAbsTime)
+			if diff < 0 || diff > math.MaxInt16 {
+				return fmt.Errorf(`%w: { StreamID: "%s", Timecode: %d, last: %d, diff: %d }`,
+					ErrInvalidTimecode,
+					p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
+				)
+			}
+		}
+
+		if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
+			options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
+			nextConn = newConnection()
+			chConnection <- nextConn
+		}
+		if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
+			options.logger.Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
+			if conn != nil {
+				conn.close()
+			}
+			conn = nextConn
+			conn.initialize(absTime, options)
+			nextConn = nil
+		}
+		bt.Block.Timecode = int16(absTime - conn.baseTimecode)
+		if conn != nil {
+			timeout = conn.timeout
+		}
+		select {
+		case conn.Block <- bt.Block:
+			conn.countBlock()
+			lastAbsTime = absTime
+		case <-timeout:
+			options.logger.Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
+			cleanConnections()
+		}
+		return nil
+	}
+	if options.blockWriterReceiver != nil {
+		options.blockWriterReceiver(blockWriterFunc(write))
+	}
+
 	go func() {
-		var conn, nextConn *connection
 		defer func() {
 			if conn != nil {
 				conn.close()
@@ -184,18 +254,8 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 			close(chConnection)
 		}()
 
-		lastAbsTime := uint64(0)
-		cleanConnections := func() {
-			conn.close()
-			conn = nil
-			if nextConn != nil {
-				nextConn.close()
-				nextConn = nil
-			}
-			lastAbsTime = 0
-		}
 		for {
-			var timeout <-chan time.Time
+			timeout = nil
 			if conn != nil {
 				timeout = conn.timeout
 			}
@@ -204,43 +264,10 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 				if !ok {
 					return
 				}
-				absTime := uint64(bt.AbsTimecode())
-				if lastAbsTime != 0 {
-					diff := int64(absTime - lastAbsTime)
-					if diff < 0 || diff > math.MaxInt16 {
-						options.logger.Warnf(
-							`Invalid timecode: { StreamID: "%s", Timecode: %d, last: %d, diff: %d }`,
-							p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
-						)
-						continue
-					}
-				}
-
-				if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
-					options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
-					nextConn = newConnection()
-					chConnection <- nextConn
-				}
-				if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
-					options.logger.Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
-					if conn != nil {
-						conn.close()
-					}
-					conn = nextConn
-					conn.initialize(absTime, options)
-					nextConn = nil
-				}
-				bt.Block.Timecode = int16(absTime - conn.baseTimecode)
-				if conn != nil {
-					timeout = conn.timeout
-				}
-				select {
-				case conn.Block <- bt.Block:
-					conn.countBlock()
-					lastAbsTime = absTime
-				case <-timeout:
-					options.logger.Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
-					cleanConnections()
+				if err := write(bt); err != nil {
+					s := err.Error()
+					s = strings.ToUpper(string([]byte{s[0]})) + s[1:]
+					options.logger.Warn(s)
 				}
 			case <-timeout:
 				options.logger.Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
@@ -539,5 +566,11 @@ func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
 func WithPutMediaLogger(logger LoggerIF) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.logger = logger
+	}
+}
+
+func WithBlockWriterReceiver(fn func(BlockWriter)) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.blockWriterReceiver = fn
 	}
 }
