@@ -20,13 +20,25 @@ import (
 	"testing"
 )
 
+func gatherResponses() (chan *FragmentEvent, func() []FragmentEvent) {
+	chResp := make(chan *FragmentEvent, 1000)
+	return chResp, func() []FragmentEvent {
+		var fes []FragmentEvent
+		for fe := range chResp {
+			fes = append(fes, *fe)
+		}
+		return fes
+	}
+}
+
 func TestFragmentEvent(t *testing.T) {
 	t.Run("ErrorEvent", func(t *testing.T) {
 		input := `{"EventType":"ERROR","FragmentTimecode":12345,"FragmentNumber":"91343852333754009371412493862204112772176002064","ErrorId":5000,"ErrorCode":"DUMMY_ERROR"}`
-		fe, err := parseFragmentEvent(strings.NewReader(input))
-		if err != nil {
+		chResp, gather := gatherResponses()
+		if err := parseFragmentEvent(strings.NewReader(input), chResp); err != nil {
 			t.Fatal(err)
 		}
+		fe := gather()
 
 		if n := len(fe); n != 1 {
 			t.Fatalf("Expected 1 FragmentEvent, got %d", n)
@@ -45,9 +57,14 @@ func TestFragmentEvent(t *testing.T) {
 		}
 	})
 	t.Run("ParseError", func(t *testing.T) {
-		_, err := parseFragmentEvent(strings.NewReader("{"))
+		chResp, gather := gatherResponses()
+		err := parseFragmentEvent(strings.NewReader("{"), chResp)
 		if err != io.ErrUnexpectedEOF {
 			t.Fatalf("Expected error: '%v', got: '%v'", io.ErrUnexpectedEOF, err)
+		}
+		fe := gather()
+		if n := len(fe); n != 0 {
+			t.Fatalf("Expected 0 FragmentEvent, got %d", n)
 		}
 	})
 }
