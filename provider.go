@@ -93,13 +93,17 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 type BlockWriter interface {
 	Write(*BlockWithBaseTimecode) error
 	ReadResponse() (*FragmentEvent, error)
+	// Close immediately shuts down the client
 	Close() error
+	// Shutdown gracefully shuts down the client without interrupting on-going PutMedia request
+	Shutdown(ctx context.Context) error
 }
 
 type blockWriter struct {
 	fnWrite        func(*BlockWithBaseTimecode) error
 	fnReadResponse func() (*FragmentEvent, error)
 	fnClose        func() error
+	fnShutdown     func(ctx context.Context) error
 }
 
 func (w *blockWriter) Write(bt *BlockWithBaseTimecode) error {
@@ -112,6 +116,10 @@ func (w *blockWriter) ReadResponse() (*FragmentEvent, error) {
 
 func (w *blockWriter) Close() error {
 	return w.fnClose()
+}
+
+func (w *blockWriter) Shutdown(ctx context.Context) error {
+	return w.fnShutdown(ctx)
 }
 
 type PutMediaOptions struct {
@@ -219,15 +227,23 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	resetTimeout()
 
 	chResp := make(chan *FragmentEvent)
-	ctx, _ := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	allDone := make(chan struct{})
 	go func() {
 		p.putSegments(ctx, chConnection, chResp, options)
-		wg.Done()
+		close(allDone)
 	}()
 
+	shutdown := func(ctx context.Context) {
+		timeout.Stop()
+		cleanConnections()
+		close(chConnection)
+		select {
+		case <-allDone:
+		case <-ctx.Done():
+		}
+	}
 	writer := &blockWriter{
 		fnWrite: func(bt *BlockWithBaseTimecode) error {
 			absTime := uint64(bt.AbsTimecode())
@@ -275,12 +291,13 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 			}
 			return resp, nil
 		},
+		fnShutdown: func(ctx context.Context) error {
+			shutdown(ctx)
+			return nil
+		},
 		fnClose: func() error {
-			timeout.Stop()
-			cleanConnections()
-			close(chConnection)
-			//cancel()
-			wg.Wait()
+			cancel()
+			shutdown(context.Background())
 			return nil
 		},
 	}

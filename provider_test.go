@@ -396,7 +396,7 @@ func TestProvider(t *testing.T) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
-			if err := w.Close(); err != nil {
+			if err := w.Shutdown(ctx); err != nil {
 				t.Fatal(err)
 			}
 
