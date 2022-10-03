@@ -253,9 +253,9 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 			if lastAbsTime != 0 {
 				diff := int64(absTime - lastAbsTime)
 				if diff < 0 || diff > math.MaxInt16 {
-					return fmt.Errorf(`%w: { StreamID: "%s", Timecode: %d, last: %d, diff: %d }`,
-						ErrInvalidTimecode,
+					return fmt.Errorf(`stream_id=%s, timecode=%d, last=%d, diff=%d: %w`,
 						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
+						ErrInvalidTimecode,
 					)
 				}
 			}
