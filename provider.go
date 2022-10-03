@@ -609,13 +609,13 @@ func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
 	}
 }
 
-func WithPutMediaBuffer(n int) PutMediaOption {
+func WithPutMediaBufferLen(n int) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.lenBlockBuffer = n
 	}
 }
 
-func WithPutMediaResponseBuffer(n int) PutMediaOption {
+func WithPutMediaResponseBufferLen(n int) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.lenResponseBuffer = n
 	}
