@@ -18,6 +18,7 @@ import (
 	"context"
 	"io"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -89,7 +90,10 @@ func TestConsumer(t *testing.T) {
 		}
 	}()
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			tag, err := r.ReadTag()
 			if err == io.EOF {
@@ -114,6 +118,7 @@ func TestConsumer(t *testing.T) {
 	if _, err := r.Close(); err != nil {
 		t.Error(err)
 	}
+	wg.Wait()
 
 	// check only second fragment was loaded
 	expectedBlocks := []kvm.BlockWithBaseTimecode{
