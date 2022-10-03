@@ -134,8 +134,8 @@ func (c *Consumer) GetMedia(opts ...GetMediaOption) (BlockReader, error) {
 		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
 
-	ch := make(chan *BlockWithBaseTimecode)
-	chTag := make(chan *Tag)
+	ch := make(chan *BlockWithBaseTimecode, options.lenBlockBuffer)
+	chTag := make(chan *Tag, options.lenTagBuffer)
 	chBlock := make(chan ebml.Block)
 	chTimecode := make(chan uint64)
 	go func() {
@@ -214,7 +214,9 @@ type GetMediaBody struct {
 }
 
 type GetMediaOptions struct {
-	startSelector StartSelector
+	startSelector  StartSelector
+	lenTagBuffer   int
+	lenBlockBuffer int
 }
 
 type GetMediaOption func(*GetMediaOptions)
@@ -242,5 +244,17 @@ func WithStartSelectorContinuationToken(token string) GetMediaOption {
 			StartSelectorType: StartSelectorTypeContinuationToken,
 			ContinuationToken: token,
 		}
+	}
+}
+
+func WithGetMediaBufferLen(n int) GetMediaOption {
+	return func(options *GetMediaOptions) {
+		options.lenBlockBuffer = n
+	}
+}
+
+func WithGetMediaTagBufferLen(n int) GetMediaOption {
+	return func(options *GetMediaOptions) {
+		options.lenTagBuffer = n
 	}
 }
