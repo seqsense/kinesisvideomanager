@@ -137,6 +137,8 @@ type PutMediaOptions struct {
 	retryCount             int
 	retryIntervalBase      time.Duration
 	fragmentHeadDumpLen    int
+	lenBlockBuffer         int
+	lenResponseBuffer      int
 	logger                 LoggerIF
 }
 
@@ -150,11 +152,11 @@ type connection struct {
 	nBlock       uint64
 }
 
-func newConnection() *connection {
+func newConnection(opts *PutMediaOptions) *connection {
 	return &connection{
 		BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
 			Timecode: make(chan uint64, 1),
-			Block:    make(chan ebml.Block),
+			Block:    make(chan ebml.Block, opts.lenBlockBuffer),
 			Tag:      make(chan *Tag, 1),
 		},
 	}
@@ -200,7 +202,9 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		httpClient: http.Client{
 			Timeout: 15 * time.Second,
 		},
-		logger: Logger(),
+		lenBlockBuffer:    10,
+		lenResponseBuffer: 10,
+		logger:            Logger(),
 	}
 	for _, o := range opts {
 		o(options)
@@ -229,7 +233,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	}
 	resetTimeout()
 
-	chResp := make(chan *FragmentEvent)
+	chResp := make(chan *FragmentEvent, options.lenResponseBuffer)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	allDone := make(chan struct{})
@@ -262,7 +266,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 
 			if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
 				options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
-				nextConn = newConnection()
+				nextConn = newConnection(options)
 				chConnection <- nextConn
 			}
 			if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
@@ -602,6 +606,18 @@ func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.retryCount = count
 		p.retryIntervalBase = intervalBase
+	}
+}
+
+func WithPutMediaBuffer(n int) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.lenBlockBuffer = n
+	}
+}
+
+func WithPutMediaResponseBuffer(n int) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.lenResponseBuffer = n
 	}
 }
 
