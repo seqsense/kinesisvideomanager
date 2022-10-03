@@ -61,8 +61,11 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 }
 
 type BlockReader interface {
+	// Read returns media block.
 	Read() (*BlockWithBaseTimecode, error)
+	// ReadTag returns stored tag.
 	ReadTag() (*Tag, error)
+	// Close the connenction to Kinesis Video Stream.
 	Close() (*Container, error)
 }
 
@@ -82,6 +85,10 @@ func (r *blockReader) Close() (*Container, error) {
 	return r.fnClose()
 }
 
+// GetMedia opens connection to Kinesis Video Stream to get media blocks.
+// This function immediately returns BlockReader.
+// Both BlockWriter.Read() and BlockWriter.ReadTag() must be called until getting
+// io.EOF as error, otherwise Reader will be blocked after the buffer is filled.
 func (c *Consumer) GetMedia(opts ...GetMediaOption) (BlockReader, error) {
 	options := &GetMediaOptions{
 		startSelector: StartSelector{
