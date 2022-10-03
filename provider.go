@@ -94,7 +94,9 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 }
 
 type BlockWriter interface {
+	// Write a block to Kinesis Video Stream.
 	Write(*BlockWithBaseTimecode) error
+	// Read a response from Kinesis Video Stream.
 	ReadResponse() (*FragmentEvent, error)
 	// Close immediately shuts down the client
 	Close() error
@@ -191,6 +193,10 @@ func (c *connection) numBlock() int {
 	return int(atomic.LoadUint64(&c.nBlock))
 }
 
+// PutMedia opens connection to Kinesis Video Stream to put media blocks.
+// This function immediately returns BlockWriter.
+// BlockWriter.ReadResponse() must be called until getting io.EOF as error,
+// otherwise Write() call will be blocked after the buffer is filled.
 func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	var options *PutMediaOptions
 	options = &PutMediaOptions{
