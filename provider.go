@@ -48,7 +48,10 @@ var (
 	regexAmzCredHeader = regexp.MustCompile(`X-Amz-(Credential|Security-Token|Signature)=[^&]*`)
 )
 
-var ErrInvalidTimecode = errors.New("invalid timecode")
+var (
+	ErrInvalidTimecode = errors.New("invalid timecode")
+	ErrWriteTimeout    = errors.New("write timeout")
+)
 
 func init() {
 	immediateTimeout = make(chan time.Time)
@@ -279,8 +282,11 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 				conn.countBlock()
 				lastAbsTime = absTime
 			case <-timeout.C:
-				options.logger.Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 				cleanConnections()
+				return fmt.Errorf(`stream_id=%s, timecode=%d: %w`,
+					p.streamID, bt.AbsTimecode(),
+					ErrInvalidTimecode,
+				)
 			}
 			return nil
 		},
