@@ -76,9 +76,22 @@ func main() {
 		log.Fatal(err)
 	}
 
-	chResp := make(chan kvm.FragmentEvent, 10)
-	ch := make(chan *kvm.BlockWithBaseTimecode, 10)
 	start := time.Now()
+
+	w, err := pro.PutMedia()
+	if err != nil {
+		log.Fatal(err)
+	}
+	go func() {
+		for {
+			fe, err := w.ReadResponse()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			log.Printf("response: %+v", *fe)
+		}
+	}()
 
 	as := appsink.New(sink, func(b []byte, n int) {
 		t := uint64(time.Now().Sub(start)) / 1000000
@@ -94,19 +107,13 @@ func main() {
 			},
 		}
 		// log.Printf("write: %v", data)
-		ch <- data
+		err := w.Write(data)
+		if err != nil {
+			log.Println(err)
+		}
 	})
 	defer as.Close()
 	l.Start()
 
-	go func() {
-		for {
-			select {
-			case fe := <-chResp:
-				log.Printf("response: %+v", fe)
-			}
-		}
-	}()
-
-	pro.PutMedia(ch, chResp)
+	select {}
 }
