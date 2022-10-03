@@ -16,6 +16,7 @@ package kinesisvideomanager_test
 
 import (
 	"context"
+	"io"
 	"reflect"
 	"testing"
 	"time"
@@ -68,42 +69,50 @@ func TestConsumer(t *testing.T) {
 		server.RegisterFragment(f)
 	}
 
-	ch := make(chan *kvm.BlockWithBaseTimecode)
 	var blocks []kvm.BlockWithBaseTimecode
-	chTag := make(chan *kvm.Tag)
 	var tags []kvm.SimpleTag
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	go func() {
-		defer cancel()
-		for {
-			select {
-			case b, ok := <-ch:
-				if !ok {
-					continue
-				}
-				blocks = append(blocks, *b)
-			case t, ok := <-chTag:
-				if !ok {
-					return
-				}
-				tags = append(tags, t.SimpleTag...)
-			}
-		}
-	}()
-
 	opts := []kvm.GetMediaOption{
 		kvm.WithStartSelectorProducerTimestamp(time.Unix(1001, 0)),
 	}
-	_, err = con.GetMedia(ch, chTag, opts...)
+	r, err := con.GetMedia(opts...)
 	if err != nil {
 		t.Fatalf("Failed to run GetMedia: %v", err)
 	}
 
-	<-ctx.Done()
-	if ctx.Err() == context.DeadlineExceeded {
-		t.Fatalf("GetMedia timed out")
+	go func() {
+		<-ctx.Done()
+		if err := ctx.Err(); err != context.Canceled {
+			t.Error(err)
+		}
+	}()
+
+	go func() {
+		for {
+			tag, err := r.ReadTag()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				t.Error(err)
+			}
+			tags = append(tags, tag.SimpleTag...)
+		}
+	}()
+	for {
+		b, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Error(err)
+		}
+		blocks = append(blocks, *b)
+	}
+	if _, err := r.Close(); err != nil {
+		t.Error(err)
 	}
 
 	// check only second fragment was loaded
