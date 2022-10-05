@@ -477,7 +477,7 @@ func TestProvider_WithHttpClient(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := w.Close(); err != nil {
+	if err := w.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	var netErr net.Error

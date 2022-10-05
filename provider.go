@@ -442,7 +442,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 		}
 	}()
 
-	errPutMedia := p.putMediaRaw(r, chRespRaw, opts)
+	errPutMedia := p.putMediaRaw(ctx, r, chRespRaw, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
 	}
@@ -473,7 +473,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 				p.streamID, i,
 				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
 			)
-			if err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, chRespRaw, opts); err == nil {
+			if err = p.putMediaRaw(ctx, &nopCloser{bytes.NewReader(backup.Bytes())}, chRespRaw, opts); err == nil {
 				break
 			}
 			if fe, ok := err.(*FragmentEvent); ok && opts.fragmentHeadDumpLen > 0 {
@@ -490,8 +490,8 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	return err
 }
 
-func (p *Provider) putMediaRaw(rc io.ReadCloser, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
-	req, err := http.NewRequest("POST", p.endpoint, rc)
+func (p *Provider) putMediaRaw(ctx context.Context, rc io.ReadCloser, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, rc)
 	if err != nil {
 		_ = rc.Close()
 		return fmt.Errorf("creating http request: %w", err)
