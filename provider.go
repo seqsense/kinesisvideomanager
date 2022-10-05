@@ -96,7 +96,7 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 type BlockWriter interface {
 	// Write a block to Kinesis Video Stream.
 	Write(*BlockWithBaseTimecode) error
-	// Read a response from Kinesis Video Stream.
+	// ReadResponse reads a response from Kinesis Video Stream.
 	ReadResponse() (*FragmentEvent, error)
 	// Close immediately shuts down the client
 	Close() error
