@@ -112,7 +112,12 @@ func main() {
 			log.Println(err)
 		}
 	})
-	defer as.Close()
+	defer func() {
+		as.Close()
+		if err = w.Close(); err != nil {
+			log.Println(err)
+		}
+	}()
 	l.Start()
 
 	select {}
