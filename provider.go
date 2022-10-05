@@ -295,7 +295,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 				cleanConnections()
 				return fmt.Errorf(`stream_id=%s, timecode=%d: %w`,
 					p.streamID, bt.AbsTimecode(),
-					ErrInvalidTimecode,
+					ErrWriteTimeout,
 				)
 			}
 			return nil
