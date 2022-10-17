@@ -78,18 +78,20 @@ func (e *FragmentEvent) Dump() []byte {
 	return e.fragmentHead
 }
 
-func parseFragmentEvent(r io.Reader) ([]FragmentEvent, error) {
+func parseFragmentEvent(r io.Reader, ch chan *FragmentEvent) error {
+	defer func() {
+		close(ch)
+	}()
 	dec := json.NewDecoder(r)
-	var ret []FragmentEvent
 	for {
 		var fe FragmentEvent
 		if err := dec.Decode(&fe); err != nil {
 			if err == io.EOF {
 				break
 			}
-			return nil, err
+			return err
 		}
-		ret = append(ret, fe)
+		ch <- &fe
 	}
-	return ret, nil
+	return nil
 }
