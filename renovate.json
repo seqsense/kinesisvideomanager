@@ -47,5 +47,8 @@
     }
   ],
   "ignorePaths": [],
+  "ignoreDeps": [
+    "github.com/seqsense/kinesisvideomanager"
+  ],
   "timezone": "Asia/Tokyo"
 }
