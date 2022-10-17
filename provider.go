@@ -17,6 +17,7 @@ package kinesisvideomanager
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +26,6 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,7 +48,10 @@ var (
 	regexAmzCredHeader = regexp.MustCompile(`X-Amz-(Credential|Security-Token|Signature)=[^&]*`)
 )
 
-var ErrInvalidTimecode = errors.New("invalid timecode")
+var (
+	ErrInvalidTimecode = errors.New("invalid timecode")
+	ErrWriteTimeout    = errors.New("write timeout")
+)
 
 func init() {
 	immediateTimeout = make(chan time.Time)
@@ -91,13 +94,37 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 }
 
 type BlockWriter interface {
+	// Write a block to Kinesis Video Stream.
 	Write(*BlockWithBaseTimecode) error
+	// ReadResponse reads a response from Kinesis Video Stream.
+	ReadResponse() (*FragmentEvent, error)
+	// Close immediately shuts down the client
+	Close() error
+	// Shutdown gracefully shuts down the client without interrupting on-going PutMedia request
+	Shutdown(ctx context.Context) error
 }
 
-type blockWriterFunc func(*BlockWithBaseTimecode) error
+type blockWriter struct {
+	fnWrite        func(*BlockWithBaseTimecode) error
+	fnReadResponse func() (*FragmentEvent, error)
+	fnClose        func() error
+	fnShutdown     func(ctx context.Context) error
+}
 
-func (f blockWriterFunc) Write(bt *BlockWithBaseTimecode) error {
-	return f(bt)
+func (w *blockWriter) Write(bt *BlockWithBaseTimecode) error {
+	return w.fnWrite(bt)
+}
+
+func (w *blockWriter) ReadResponse() (*FragmentEvent, error) {
+	return w.fnReadResponse()
+}
+
+func (w *blockWriter) Close() error {
+	return w.fnClose()
+}
+
+func (w *blockWriter) Shutdown(ctx context.Context) error {
+	return w.fnShutdown(ctx)
 }
 
 type PutMediaOptions struct {
@@ -112,8 +139,9 @@ type PutMediaOptions struct {
 	retryCount             int
 	retryIntervalBase      time.Duration
 	fragmentHeadDumpLen    int
+	lenBlockBuffer         int
+	lenResponseBuffer      int
 	logger                 LoggerIF
-	blockWriterReceiver    func(BlockWriter)
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -123,18 +151,16 @@ type connection struct {
 	baseTimecode uint64
 	onceClose    sync.Once
 	onceInit     sync.Once
-	timeout      <-chan time.Time
 	nBlock       uint64
 }
 
-func newConnection() *connection {
+func newConnection(opts *PutMediaOptions) *connection {
 	return &connection{
 		BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
 			Timecode: make(chan uint64, 1),
-			Block:    make(chan ebml.Block),
+			Block:    make(chan ebml.Block, opts.lenBlockBuffer),
 			Tag:      make(chan *Tag, 1),
 		},
-		timeout: immediateTimeout,
 	}
 }
 func (c *connection) initialize(baseTimecode uint64, opts *PutMediaOptions) {
@@ -147,8 +173,6 @@ func (c *connection) initialize(baseTimecode uint64, opts *PutMediaOptions) {
 			c.Tag <- &Tag{SimpleTag: opts.tags()}
 		}
 		close(c.Tag)
-
-		c.timeout = time.After(opts.connectionTimeout)
 	})
 }
 
@@ -169,7 +193,11 @@ func (c *connection) numBlock() int {
 	return int(atomic.LoadUint64(&c.nBlock))
 }
 
-func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan FragmentEvent, opts ...PutMediaOption) {
+// PutMedia opens connection to Kinesis Video Stream to put media blocks.
+// This function immediately returns BlockWriter.
+// BlockWriter.ReadResponse() must be called until getting io.EOF as error,
+// otherwise Write() call will be blocked after the buffer is filled.
+func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	var options *PutMediaOptions
 	options = &PutMediaOptions{
 		title:                  "kinesisvideomanager.Provider",
@@ -180,7 +208,9 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 		httpClient: http.Client{
 			Timeout: 15 * time.Second,
 		},
-		logger: Logger(),
+		lenBlockBuffer:    10,
+		lenResponseBuffer: 10,
+		logger:            Logger(),
 	}
 	for _, o := range opts {
 		o(options)
@@ -188,98 +218,110 @@ func (p *Provider) PutMedia(ch chan *BlockWithBaseTimecode, chResp chan Fragment
 
 	var conn, nextConn *connection
 	var lastAbsTime uint64
-	var timeout <-chan time.Time
 	chConnection := make(chan *connection)
 	cleanConnections := func() {
-		conn.close()
-		conn = nil
+		if conn != nil {
+			conn.close()
+			conn = nil
+		}
 		if nextConn != nil {
 			nextConn.close()
 			nextConn = nil
 		}
 		lastAbsTime = 0
 	}
-	write := func(bt *BlockWithBaseTimecode) error {
-		absTime := uint64(bt.AbsTimecode())
-		if lastAbsTime != 0 {
-			diff := int64(absTime - lastAbsTime)
-			if diff < 0 || diff > math.MaxInt16 {
-				return fmt.Errorf(`%w: { StreamID: "%s", Timecode: %d, last: %d, diff: %d }`,
-					ErrInvalidTimecode,
-					p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
-				)
-			}
-		}
-
-		if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
-			options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
-			nextConn = newConnection()
-			chConnection <- nextConn
-		}
-		if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
-			options.logger.Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
-			if conn != nil {
-				conn.close()
-			}
-			conn = nextConn
-			conn.initialize(absTime, options)
-			nextConn = nil
-		}
-		bt.Block.Timecode = int16(absTime - conn.baseTimecode)
-		if conn != nil {
-			timeout = conn.timeout
-		}
-		select {
-		case conn.Block <- bt.Block:
-			conn.countBlock()
-			lastAbsTime = absTime
-		case <-timeout:
-			options.logger.Warnf(`Sending block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
+	var timeout *time.Timer
+	resetTimeout := func() {
+		timeout = time.AfterFunc(options.connectionTimeout, func() {
+			options.logger.Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 			cleanConnections()
-		}
-		return nil
+		})
 	}
-	if options.blockWriterReceiver != nil {
-		options.blockWriterReceiver(blockWriterFunc(write))
-	}
+	resetTimeout()
 
+	chResp := make(chan *FragmentEvent, options.lenResponseBuffer)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	allDone := make(chan struct{})
 	go func() {
-		defer func() {
-			if conn != nil {
-				conn.close()
-			}
-			if nextConn != nil {
-				nextConn.close()
-			}
-			close(chConnection)
-		}()
-
-		for {
-			timeout = nil
-			if conn != nil {
-				timeout = conn.timeout
-			}
-			select {
-			case bt, ok := <-ch:
-				if !ok {
-					return
-				}
-				if err := write(bt); err != nil {
-					s := err.Error()
-					s = strings.ToUpper(string([]byte{s[0]})) + s[1:]
-					options.logger.Warn(s)
-				}
-			case <-timeout:
-				options.logger.Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
-				cleanConnections()
-			}
-		}
+		p.putSegments(ctx, chConnection, chResp, options)
+		close(allDone)
 	}()
 
-	p.putSegments(chConnection, chResp, options)
+	shutdown := func(ctx context.Context) {
+		timeout.Stop()
+		cleanConnections()
+		close(chConnection)
+		select {
+		case <-allDone:
+		case <-ctx.Done():
+		}
+	}
+	writer := &blockWriter{
+		fnWrite: func(bt *BlockWithBaseTimecode) error {
+			absTime := uint64(bt.AbsTimecode())
+			if lastAbsTime != 0 {
+				diff := int64(absTime - lastAbsTime)
+				if diff < 0 || diff > math.MaxInt16 {
+					return fmt.Errorf(`stream_id=%s, timecode=%d, last=%d, diff=%d: %w`,
+						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
+						ErrInvalidTimecode,
+					)
+				}
+			}
+
+			if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
+				options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
+				nextConn = newConnection(options)
+				chConnection <- nextConn
+			}
+			if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
+				options.logger.Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
+				if conn != nil {
+					conn.close()
+				}
+				timeout.Stop()
+				conn = nextConn
+				conn.initialize(absTime, options)
+				resetTimeout()
+				nextConn = nil
+			}
+			bt.Block.Timecode = int16(absTime - conn.baseTimecode)
+			select {
+			case conn.Block <- bt.Block:
+				conn.countBlock()
+				lastAbsTime = absTime
+			case <-timeout.C:
+				cleanConnections()
+				return fmt.Errorf(`stream_id=%s, timecode=%d: %w`,
+					p.streamID, bt.AbsTimecode(),
+					ErrWriteTimeout,
+				)
+			}
+			return nil
+		},
+		fnReadResponse: func() (*FragmentEvent, error) {
+			resp, ok := <-chResp
+			if !ok {
+				return nil, io.EOF
+			}
+			return resp, nil
+		},
+		fnShutdown: func(ctx context.Context) error {
+			shutdown(ctx)
+			return nil
+		},
+		fnClose: func() error {
+			cancel()
+			shutdown(context.Background())
+			return nil
+		},
+	}
+
+	return writer, nil
 }
 
-func (p *Provider) putSegments(ch chan *connection, chResp chan FragmentEvent, opts *PutMediaOptions) {
+func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp chan *FragmentEvent, opts *PutMediaOptions) {
 	var wg sync.WaitGroup
 	defer func() {
 		wg.Wait()
@@ -290,10 +332,8 @@ func (p *Provider) putSegments(ch chan *connection, chResp chan FragmentEvent, o
 		conn := conn
 		wg.Add(1)
 		go func() {
-			defer func() {
-				wg.Done()
-			}()
-			err := p.putMedia(conn, chResp, opts)
+			defer wg.Done()
+			err := p.putMedia(ctx, conn, chResp, opts)
 			if err != nil {
 				opts.onError(err)
 				return
@@ -302,7 +342,7 @@ func (p *Provider) putSegments(ch chan *connection, chResp chan FragmentEvent, o
 	}
 }
 
-func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *PutMediaOptions) error {
+func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
 	segmentUuid := opts.segmentUID
 	if segmentUuid == nil {
 		var err error
@@ -383,9 +423,13 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 		}
 	}()
 
-	chRespRaw := make(chan FragmentEvent)
+	chRespRaw := make(chan *FragmentEvent)
+
 	var wgResp sync.WaitGroup
-	defer wgResp.Wait()
+	defer func() {
+		close(chRespRaw)
+		wgResp.Wait()
+	}()
 	wgResp.Add(1)
 	go func() {
 		defer wgResp.Done()
@@ -398,11 +442,10 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 		}
 	}()
 
-	errPutMedia := p.putMediaRaw(r, chRespRaw, opts)
+	errPutMedia := p.putMediaRaw(ctx, r, chRespRaw, opts)
 	if errPutMedia != nil {
 		_ = r.Close()
 	}
-	close(chRespRaw)
 
 	<-chMarshalDone
 	if errMarshal != nil {
@@ -417,15 +460,20 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 	err := newMultiError(errPutMedia, errFlush, writeErr())
 	if err != nil && opts.retryCount > 0 {
 		interval := opts.retryIntervalBase
+	L_RETRY:
 		for i := 0; i < opts.retryCount; i++ {
-			time.Sleep(interval)
+			select {
+			case <-time.After(interval):
+			case <-ctx.Done():
+				break L_RETRY
+			}
 
 			opts.logger.Infof(
 				`Retrying PutMedia: { StreamID: "%s", RetryCount: %d, Err: %s }`,
 				p.streamID, i,
 				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
 			)
-			if err = p.putMediaRaw(&nopCloser{bytes.NewReader(backup.Bytes())}, chResp, opts); err == nil {
+			if err = p.putMediaRaw(ctx, &nopCloser{bytes.NewReader(backup.Bytes())}, chRespRaw, opts); err == nil {
 				break
 			}
 			if fe, ok := err.(*FragmentEvent); ok && opts.fragmentHeadDumpLen > 0 {
@@ -442,8 +490,8 @@ func (p *Provider) putMedia(conn *connection, chResp chan FragmentEvent, opts *P
 	return err
 }
 
-func (p *Provider) putMediaRaw(rc io.ReadCloser, chResp chan FragmentEvent, opts *PutMediaOptions) error {
-	req, err := http.NewRequest("POST", p.endpoint, rc)
+func (p *Provider) putMediaRaw(ctx context.Context, rc io.ReadCloser, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, rc)
 	if err != nil {
 		_ = rc.Close()
 		return fmt.Errorf("creating http request: %w", err)
@@ -481,17 +529,21 @@ func (p *Provider) putMediaRaw(rc io.ReadCloser, chResp chan FragmentEvent, opts
 		}
 		return fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
-	var fes []FragmentEvent
-	fes, err = parseFragmentEvent(res.Body)
-	if err != nil {
+	chFE := make(chan *FragmentEvent)
+	chErr := make(chan error, 1)
+	go func() {
+		for fe := range chFE {
+			if fe.IsError() && err == nil {
+				chErr <- fe
+			}
+			chResp <- fe
+		}
+		close(chErr)
+	}()
+	if err := parseFragmentEvent(res.Body, chFE); err != nil {
 		return err
 	}
-	for _, fe := range fes {
-		if fe.IsError() && err == nil {
-			err = &fe
-		}
-		chResp <- fe
-	}
+	err = <-chErr
 	return err
 }
 
@@ -563,14 +615,20 @@ func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
 	}
 }
 
-func WithPutMediaLogger(logger LoggerIF) PutMediaOption {
+func WithPutMediaBufferLen(n int) PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.logger = logger
+		p.lenBlockBuffer = n
 	}
 }
 
-func WithBlockWriterReceiver(fn func(BlockWriter)) PutMediaOption {
+func WithPutMediaResponseBufferLen(n int) PutMediaOption {
 	return func(p *PutMediaOptions) {
-		p.blockWriterReceiver = fn
+		p.lenResponseBuffer = n
+	}
+}
+
+func WithPutMediaLogger(logger LoggerIF) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.logger = logger
 	}
 }
