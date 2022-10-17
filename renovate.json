@@ -46,5 +46,6 @@
       "automerge": true
     }
   ],
+  "ignorePaths": [],
   "timezone": "Asia/Tokyo"
 }
