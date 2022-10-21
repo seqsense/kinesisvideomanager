@@ -16,10 +16,13 @@ package kinesisvideomanager
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -57,8 +60,36 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 	}, nil
 }
 
-func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opts ...GetMediaOption) (*Container, error) {
+type BlockReader interface {
+	// Read returns media block.
+	Read() (*BlockWithBaseTimecode, error)
+	// ReadTag returns stored tag.
+	ReadTag() (*Tag, error)
+	// Close the connenction to Kinesis Video Stream.
+	Close() (*Container, error)
+}
 
+type blockReader struct {
+	fnRead    func() (*BlockWithBaseTimecode, error)
+	fnReadTag func() (*Tag, error)
+	fnClose   func() (*Container, error)
+}
+
+func (r *blockReader) Read() (*BlockWithBaseTimecode, error) {
+	return r.fnRead()
+}
+func (r *blockReader) ReadTag() (*Tag, error) {
+	return r.fnReadTag()
+}
+func (r *blockReader) Close() (*Container, error) {
+	return r.fnClose()
+}
+
+// GetMedia opens connection to Kinesis Video Stream to get media blocks.
+// This function immediately returns BlockReader.
+// Both BlockWriter.Read() and BlockWriter.ReadTag() must be called until getting
+// io.EOF as error, otherwise Reader will be blocked after the buffer is filled.
+func (c *Consumer) GetMedia(opts ...GetMediaOption) (BlockReader, error) {
 	options := &GetMediaOptions{
 		startSelector: StartSelector{
 			StartSelectorType: StartSelectorTypeNow,
@@ -79,8 +110,10 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 	}
 	bodyReader := bytes.NewReader(body)
 
-	req, err := http.NewRequest("POST", c.endpoint, bodyReader)
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bodyReader)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	req.Header.Set("Content-type", "application/json")
@@ -91,27 +124,32 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 		10*time.Minute, time.Now(),
 	)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	res, err := c.httpCli.Do(req)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		body, err := ioutil.ReadAll(res.Body)
+		cancel()
 		if err != nil {
 			return nil, err
 		}
 		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
 
+	ch := make(chan *BlockWithBaseTimecode, options.lenBlockBuffer)
+	chTag := make(chan *Tag, options.lenTagBuffer)
 	chBlock := make(chan ebml.Block)
 	chTimecode := make(chan uint64)
 	go func() {
 		defer func() {
 			close(ch)
-			close(chTag)
+			cancel()
+			res.Body.Close()
 		}()
 		var baseTime uint64
 		for {
@@ -133,13 +171,40 @@ func (c *Consumer) GetMedia(ch chan *BlockWithBaseTimecode, chTag chan *Tag, opt
 	data.Segment.Cluster.Timecode = chTimecode
 	data.Segment.Cluster.SimpleBlock = chBlock
 	data.Segment.Tags.Tag = chTag
-	defer func() {
-		close(chBlock)
+
+	var errUnmarshal error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer func() {
+			close(chBlock)
+			close(chTag)
+			wg.Done()
+		}()
+		errUnmarshal = ebml.Unmarshal(res.Body, data)
 	}()
-	if err := ebml.Unmarshal(res.Body, data); err != nil {
-		return nil, err
-	}
-	return data, nil
+
+	return &blockReader{
+		fnRead: func() (*BlockWithBaseTimecode, error) {
+			b, ok := <-ch
+			if !ok {
+				return nil, io.EOF
+			}
+			return b, nil
+		},
+		fnReadTag: func() (*Tag, error) {
+			t, ok := <-chTag
+			if !ok {
+				return nil, io.EOF
+			}
+			return t, nil
+		},
+		fnClose: func() (*Container, error) {
+			cancel()
+			wg.Wait()
+			return data, errUnmarshal
+		},
+	}, nil
 }
 
 type StartSelector struct {
@@ -156,7 +221,9 @@ type GetMediaBody struct {
 }
 
 type GetMediaOptions struct {
-	startSelector StartSelector
+	startSelector  StartSelector
+	lenTagBuffer   int
+	lenBlockBuffer int
 }
 
 type GetMediaOption func(*GetMediaOptions)
@@ -184,5 +251,17 @@ func WithStartSelectorContinuationToken(token string) GetMediaOption {
 			StartSelectorType: StartSelectorTypeContinuationToken,
 			ContinuationToken: token,
 		}
+	}
+}
+
+func WithGetMediaBufferLen(n int) GetMediaOption {
+	return func(options *GetMediaOptions) {
+		options.lenBlockBuffer = n
+	}
+}
+
+func WithGetMediaTagBufferLen(n int) GetMediaOption {
+	return func(options *GetMediaOptions) {
+		options.lenTagBuffer = n
 	}
 }

@@ -59,28 +59,33 @@ func main() {
 	defer as.EOS()
 	l.Start()
 
-	ch := make(chan *kvm.BlockWithBaseTimecode)
-	chTag := make(chan *kvm.Tag)
+	r, err := con.GetMedia()
+	if err != nil {
+		log.Fatal(err)
+	}
 	go func() {
 		for {
-			select {
-			case tag := <-chTag:
-				for _, t := range tag.SimpleTag {
-					log.Printf("tag: %s: %s", t.TagName, t.TagString)
-				}
-			case c, ok := <-ch:
-				if !ok {
-					return
-				}
-				// log.Printf("block: %v", c)
-				as.PushBuffer(c.Block.Data[0])
+			tag, err := r.ReadTag()
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			for _, t := range tag.SimpleTag {
+				log.Printf("tag: %s: %s", t.TagName, t.TagString)
 			}
 		}
 	}()
-	data, err := con.GetMedia(ch, chTag)
+	for {
+		b, err := r.Read()
+		if err != nil {
+			break
+		}
+		// log.Printf("block: %v", c)
+		as.PushBuffer(b.Block.Data[0])
+	}
+	data, err := r.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("container: %v", data)
-	close(ch)
 }
