@@ -257,34 +257,48 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		case <-ctx.Done():
 		}
 	}
+	prepareNextConn := func() {
+		nextConn = newConnection(options)
+		chConnection <- nextConn
+	}
+	switchToNextConn := func(startTime uint64) {
+		if conn != nil {
+			conn.close()
+		}
+		timeout.Stop()
+		conn = nextConn
+		conn.initialize(startTime, options)
+		resetTimeout()
+		nextConn = nil
+	}
+
 	writer := &blockWriter{
 		fnWrite: func(bt *BlockWithBaseTimecode) error {
 			absTime := uint64(bt.AbsTimecode())
 			if lastAbsTime != 0 {
 				diff := int64(absTime - lastAbsTime)
-				if diff < 0 || diff > math.MaxInt16 {
+				if diff < 0 {
 					return fmt.Errorf(`stream_id=%s, timecode=%d, last=%d, diff=%d: %w`,
 						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
 						ErrInvalidTimecode,
 					)
 				}
+				if diff > math.MaxInt16 {
+					options.logger.Debugf(`Forcing next connection: { StreamID: "%s", AbsTime: %d, LastAbsTime: %d, Diff: %d }`,
+						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
+					)
+					prepareNextConn()
+					switchToNextConn(absTime)
+				}
 			}
 
 			if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
 				options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
-				nextConn = newConnection(options)
-				chConnection <- nextConn
+				prepareNextConn()
 			}
 			if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
 				options.logger.Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
-				if conn != nil {
-					conn.close()
-				}
-				timeout.Stop()
-				conn = nextConn
-				conn.initialize(absTime, options)
-				resetTimeout()
-				nextConn = nil
+				switchToNextConn(absTime)
 			}
 			bt.Block.Timecode = int16(absTime - conn.baseTimecode)
 			select {
