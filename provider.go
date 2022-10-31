@@ -250,15 +250,20 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		close(allDone)
 	}()
 
-	shutdown := func(ctx context.Context) {
+	shutdown := func(ctx context.Context) error {
 		timeout.Stop()
 		cleanConnections()
-		close(chConnection)
+		if chConnection != nil {
+			close(chConnection)
+			chConnection = nil
+		}
 		select {
 		case <-allDone:
 			cancel()
 		case <-ctx.Done():
+			return ctx.Err()
 		}
+		return nil
 	}
 	prepareNextConn := func() {
 		nextConn = newConnection(options)
@@ -325,13 +330,11 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 			return resp, nil
 		},
 		fnShutdown: func(ctx context.Context) error {
-			shutdown(ctx)
-			return nil
+			return shutdown(ctx)
 		},
 		fnClose: func() error {
 			cancel()
-			shutdown(context.Background())
-			return nil
+			return shutdown(context.Background())
 		},
 	}
 
