@@ -98,9 +98,11 @@ type BlockWriter interface {
 	Write(*BlockWithBaseTimecode) error
 	// ReadResponse reads a response from Kinesis Video Stream.
 	ReadResponse() (*FragmentEvent, error)
-	// Close immediately shuts down the client
+	// Close immediately shuts down the client.
 	Close() error
-	// Shutdown gracefully shuts down the client without interrupting on-going PutMedia request
+	// Shutdown gracefully shuts down the client without interrupting on-going PutMedia request.
+	// If Shotdown returned an error, some of the internal resources might not released yet and
+	// caller should call Shutdown or Close again.
 	Shutdown(ctx context.Context) error
 }
 
