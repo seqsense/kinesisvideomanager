@@ -254,6 +254,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		close(chConnection)
 		select {
 		case <-allDone:
+			cancel()
 		case <-ctx.Done():
 		}
 	}
