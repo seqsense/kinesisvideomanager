@@ -539,6 +539,40 @@ func TestProvider_WithPutMediaLogger(t *testing.T) {
 	}
 }
 
+func TestProvider_shutdownTwice(t *testing.T) {
+	server := kvsm.NewKinesisVideoServer()
+	defer server.Close()
+
+	pro := newProvider(t, server)
+
+	w, err := pro.PutMedia()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		for {
+			if _, err := w.ReadResponse(); err != nil {
+				return
+			}
+		}
+	}()
+	time.Sleep(10 * time.Millisecond)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := w.Shutdown(ctx); err != context.Canceled {
+		t.Fatalf("Expected error: %v, got: %v", context.Canceled, err)
+	}
+	if err := w.Shutdown(ctx); err != context.Canceled {
+		t.Fatalf("Expected error: %v, got: %v", context.Canceled, err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newProvider(t *testing.T, server *kvsm.KinesisVideoServer) *kvm.Provider {
 	cfg := &aws.Config{
 		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
