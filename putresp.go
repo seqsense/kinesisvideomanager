@@ -61,10 +61,22 @@ func (e *FragmentEvent) IsError() bool {
 	return e.EventType == "ERROR"
 }
 
-func (e *FragmentEvent) Error() string {
+func (e *FragmentEvent) AsError() error {
 	if e.EventType != "ERROR" {
 		panic("non-error FragmentEvent is used as error")
 	}
+	return &FragmentEventError{FragmentEvent: *e}
+}
+
+func (e *FragmentEvent) Dump() []byte {
+	return e.fragmentHead
+}
+
+type FragmentEventError struct {
+	FragmentEvent
+}
+
+func (e FragmentEventError) Error() string {
 	var dump string
 	if len(e.fragmentHead) > 0 {
 		dump = `, Data: "` + base64.RawStdEncoding.EncodeToString(e.fragmentHead) + `"`
@@ -72,10 +84,6 @@ func (e *FragmentEvent) Error() string {
 	return fmt.Sprintf(`fragment event error: { Timecode: %d, FragmentNumber: %s, ErrorId: %d, ErrorCode: "%s"%s }`,
 		e.FragmentTimecode, e.FragmentNumber, e.ErrorId, e.ErrorCode, dump,
 	)
-}
-
-func (e *FragmentEvent) Dump() []byte {
-	return e.fragmentHead
 }
 
 func parseFragmentEvent(r io.Reader, ch chan *FragmentEvent) error {

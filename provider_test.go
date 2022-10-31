@@ -174,9 +174,9 @@ func TestProvider(t *testing.T) {
 					// Skip first fragment.
 					return false
 				}
-				fe, ok := err.(*kvm.FragmentEvent)
+				fe, ok := err.(*kvm.FragmentEventError)
 				if !ok {
-					t.Errorf("Expected FragmentEvent, got %T", err)
+					t.Errorf("Expected FragmentEventError, got %T", err)
 					return false
 				}
 				expectedDump := []byte{
@@ -218,9 +218,9 @@ func TestProvider(t *testing.T) {
 					// Skip first fragment.
 					return false
 				}
-				fe, ok := err.(*kvm.FragmentEvent)
+				fe, ok := err.(*kvm.FragmentEventError)
 				if !ok {
-					t.Errorf("Expected FragmentEvent, got %T", err)
+					t.Errorf("Expected FragmentEventError, got %T", err)
 					return false
 				}
 				expectedDump := []byte{

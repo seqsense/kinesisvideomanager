@@ -490,7 +490,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 			if err = p.putMediaRaw(ctx, &nopCloser{bytes.NewReader(backup.Bytes())}, chRespRaw, opts); err == nil {
 				break
 			}
-			if fe, ok := err.(*FragmentEvent); ok && opts.fragmentHeadDumpLen > 0 {
+			if fe, ok := err.(*FragmentEventError); ok && opts.fragmentHeadDumpLen > 0 {
 				bb := backup.Bytes()
 				if len(bb) > opts.fragmentHeadDumpLen {
 					fe.fragmentHead = bb[:opts.fragmentHeadDumpLen]
@@ -548,7 +548,7 @@ func (p *Provider) putMediaRaw(ctx context.Context, rc io.ReadCloser, chResp cha
 	go func() {
 		for fe := range chFE {
 			if fe.IsError() && err == nil {
-				chErr <- fe
+				chErr <- fe.AsError()
 			}
 			chResp <- fe
 		}
