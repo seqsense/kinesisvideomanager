@@ -21,6 +21,8 @@ import (
 	"io"
 )
 
+// ErrorID represents ErrorId enum of PutMedia API.
+// See https://docs.aws.amazon.com/kinesisvideostreams/latest/dg/API_dataplane_PutMedia.html for details.
 type ErrorID int
 
 const (
@@ -47,6 +49,8 @@ const (
 	ARCHIVAL_ERROR                         ErrorID = 5001
 )
 
+// FragmentEventType represents AckEventType enum of PutMedia API.
+// See https://docs.aws.amazon.com/kinesisvideostreams/latest/dg/API_dataplane_PutMedia.html for details.
 type FragmentEventType string
 
 const (
@@ -57,6 +61,8 @@ const (
 	FRAGMENT_EVENT_IDLE      FragmentEventType = "IDLE"
 )
 
+// FragmentEvent represents Acknowledgement object of PutMedia API.
+// See https://docs.aws.amazon.com/kinesisvideostreams/latest/dg/API_dataplane_PutMedia.html for details.
 type FragmentEvent struct {
 	EventType        FragmentEventType
 	FragmentTimecode uint64
