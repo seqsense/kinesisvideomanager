@@ -511,7 +511,10 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 }
 
 func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, r)
+	ctx2, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx2, "POST", p.endpoint, r)
 	if err != nil {
 		return fmt.Errorf("creating http request: %w", err)
 	}
@@ -537,13 +540,9 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 		return fmt.Errorf("sending http request: %w", err)
 	}
 
-	var closeResBodyOnce sync.Once
-	closeResBody := func() {
-		closeResBodyOnce.Do(func() {
-			_ = res.Body.Close()
-		})
-	}
-	defer closeResBody()
+	defer func() {
+		_ = res.Body.Close()
+	}()
 
 	if res.StatusCode != 200 {
 		body, err := ioutil.ReadAll(res.Body)
@@ -559,19 +558,23 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 			switch fe.EventType {
 			case FRAGMENT_EVENT_ERROR:
 				chErr <- fe.AsError()
-				closeResBody()
+				cancel()
 			case FRAGMENT_EVENT_PERSISTED:
-				closeResBody()
+				cancel()
 			}
 			chResp <- fe
 		}
 		close(chErr)
 	}()
-	if err := parseFragmentEvent(res.Body, chFE); err != nil {
+	if err := parseFragmentEvent(
+		res.Body, chFE,
+	); err != nil && err != context.Canceled {
 		return err
 	}
-	err = <-chErr
-	return err
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return <-chErr
 }
 
 func generateRandomUUID() ([]byte, error) {
