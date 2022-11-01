@@ -353,8 +353,9 @@ func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			opts.logger.Debugf("New conn: %d", conn.baseTimecode)
 			err := p.putMedia(ctx, conn, chResp, opts)
-			opts.logger.Debug("Finished segment")
+			opts.logger.Debugf("Finished conn: %d", conn.baseTimecode)
 			if err != nil {
 				opts.onError(err)
 				return
