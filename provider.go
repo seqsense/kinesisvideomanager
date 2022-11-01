@@ -295,7 +295,9 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 					options.logger.Debugf(`Forcing next connection: { StreamID: "%s", AbsTime: %d, LastAbsTime: %d, Diff: %d }`,
 						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
 					)
-					prepareNextConn()
+					if nextConn == nil {
+						prepareNextConn()
+					}
 					switchToNextConn(absTime)
 				}
 			}
