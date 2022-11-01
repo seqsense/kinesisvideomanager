@@ -536,9 +536,14 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 	if err != nil {
 		return fmt.Errorf("sending http request: %w", err)
 	}
-	defer func() {
-		_ = res.Body.Close()
-	}()
+
+	var closeResBodyOnce sync.Once
+	closeResBody := func() {
+		closeResBodyOnce.Do(func() {
+			_ = res.Body.Close()
+		})
+	}
+	defer closeResBody()
 
 	if res.StatusCode != 200 {
 		body, err := ioutil.ReadAll(res.Body)
@@ -551,8 +556,12 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 	chErr := make(chan error, 1)
 	go func() {
 		for fe := range chFE {
-			if fe.IsError() && err == nil {
+			switch fe.EventType {
+			case FRAGMENT_EVENT_ERROR:
 				chErr <- fe.AsError()
+				closeResBody()
+			case FRAGMENT_EVENT_PERSISTED:
+				closeResBody()
 			}
 			chResp <- fe
 		}
