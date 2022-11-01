@@ -354,6 +354,7 @@ func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp 
 		go func() {
 			defer wg.Done()
 			err := p.putMedia(ctx, conn, chResp, opts)
+			opts.logger.Debug("Finished segment")
 			if err != nil {
 				opts.onError(err)
 				return
@@ -431,6 +432,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	chMarshalDone := make(chan struct{})
 	go func() {
 		defer func() {
+			opts.logger.Debug("Finished EBML marshalling")
 			close(chMarshalDone)
 			wOutRaw.CloseWithError(io.EOF)
 		}()
@@ -447,6 +449,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 
 	var wgResp sync.WaitGroup
 	defer func() {
+		opts.logger.Debug("Flushing responses")
 		close(chRespRaw)
 		wgResp.Wait()
 	}()
@@ -477,6 +480,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 
 	err := newMultiError(errPutMedia, errFlush, writeErr())
 	if err != nil && opts.retryCount > 0 {
+		opts.logger.Debug("Retrying PutMedia")
 		interval := opts.retryIntervalBase
 	L_RETRY:
 		for i := 0; i < opts.retryCount; i++ {
@@ -540,6 +544,7 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 
 	defer func() {
 		_ = res.Body.Close()
+		opts.logger.Debug("API connection closed")
 	}()
 
 	if res.StatusCode != 200 {
