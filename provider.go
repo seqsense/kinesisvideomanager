@@ -482,6 +482,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 
 	err := newMultiError(errPutMedia, errFlush, writeErr())
 	if err != nil && opts.retryCount > 0 {
+		opts.logger.Debug("Retrying PutMedia")
 		interval := opts.retryIntervalBase
 	L_RETRY:
 		for i := 0; i < opts.retryCount; i++ {
@@ -566,6 +567,7 @@ func (p *Provider) putMediaRaw(ctx context.Context, rc io.ReadCloser, chResp cha
 	if err := parseFragmentEvent(res.Body, chFE); err != nil {
 		return err
 	}
+	opts.logger.Debug("API connection closed")
 	err = <-chErr
 	return err
 }
