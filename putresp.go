@@ -47,8 +47,18 @@ const (
 	ARCHIVAL_ERROR                         ErrorID = 5001
 )
 
+type FragmentEventType string
+
+const (
+	FRAGMENT_EVENT_BUFFERING FragmentEventType = "BUFFERING"
+	FRAGMENT_EVENT_RECEIVED  FragmentEventType = "RECEIVED"
+	FRAGMENT_EVENT_PERSISTED FragmentEventType = "PERSISTED"
+	FRAGMENT_EVENT_ERROR     FragmentEventType = "ERROR"
+	FRAGMENT_EVENT_IDLE      FragmentEventType = "IDLE"
+)
+
 type FragmentEvent struct {
-	EventType        string
+	EventType        FragmentEventType
 	FragmentTimecode uint64
 	FragmentNumber   string // 158-bit number, handle as string
 	ErrorId          ErrorID
@@ -58,7 +68,7 @@ type FragmentEvent struct {
 }
 
 func (e *FragmentEvent) IsError() bool {
-	return e.EventType == "ERROR"
+	return e.EventType == FRAGMENT_EVENT_ERROR
 }
 
 func (e *FragmentEvent) AsError() error {
