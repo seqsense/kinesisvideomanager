@@ -463,9 +463,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	}()
 
 	errPutMedia := p.putMediaRaw(ctx, r, chRespRaw, opts)
-	if errPutMedia != nil {
-		_ = r.Close()
-	}
+	_ = r.Close()
 
 	<-chMarshalDone
 	if errMarshal != nil {
