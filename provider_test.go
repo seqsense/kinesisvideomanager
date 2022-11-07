@@ -76,6 +76,7 @@ func TestProvider(t *testing.T) {
 		putMediaOpts   []kvm.PutMediaOption
 		expected       []kvsm.FragmentTest
 		errCheck       func(*testing.T, int, error) bool
+		timeout        time.Duration
 	}{
 		"NoError": {
 			mockServerOpts: func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption { return nil },
@@ -102,6 +103,7 @@ func TestProvider(t *testing.T) {
 			},
 			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected1, expected2},
+			timeout:      2 * time.Second,
 		},
 		"DelayedHTTPErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
@@ -349,7 +351,11 @@ func TestProvider(t *testing.T) {
 			}
 
 			var response []kvm.FragmentEvent
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			timeout := testCase.timeout
+			if timeout == 0 {
+				timeout = time.Second
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			t.Log("test case start")
 
 			var cntErr, cntTag uint32
