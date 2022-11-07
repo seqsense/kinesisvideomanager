@@ -261,7 +261,6 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		case <-allDone:
 			cancel()
 		case <-ctx.Done():
-			println("upstream context err")
 			return ctx.Err()
 		}
 		return nil

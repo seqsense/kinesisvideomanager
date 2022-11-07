@@ -356,7 +356,6 @@ func TestProvider(t *testing.T) {
 				timeout = time.Second
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			t.Log("test case start")
 
 			var cntErr, cntTag uint32
 			var skipBelow uint32
