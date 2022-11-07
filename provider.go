@@ -259,7 +259,6 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		}
 		select {
 		case <-allDone:
-			println("allDone")
 			cancel()
 		case <-ctx.Done():
 			println("upstream context err")
@@ -336,7 +335,6 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		},
 		fnClose: func() error {
 			cancel()
-			println("fnClose")
 			return shutdown(context.Background())
 		},
 	}
