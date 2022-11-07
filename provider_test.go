@@ -350,6 +350,7 @@ func TestProvider(t *testing.T) {
 
 			var response []kvm.FragmentEvent
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			t.Log("test case start")
 
 			var cntErr, cntTag uint32
 			var skipBelow uint32
