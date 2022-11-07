@@ -26,7 +26,12 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Test
-        run: go test -v -run "^TestProvider$/^DelayedHTTPErrorRetry$" -count 100 -failfast
+        run: go test ./... -v -coverprofile=cover.out -covermode atomic -coverpkg ./...
+
+      - uses: codecov/codecov-action@v3
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./cover.out
 
   examples:
     runs-on: ubuntu-latest
