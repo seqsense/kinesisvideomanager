@@ -284,6 +284,7 @@ func TestProvider(t *testing.T) {
 			},
 			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
+			timeout:      2 * time.Second,
 		},
 		"DisconnectRetry": {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
