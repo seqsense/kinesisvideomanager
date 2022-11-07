@@ -380,10 +380,7 @@ func TestProvider(t *testing.T) {
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
-				defer func() {
-					cancel()
-					wg.Done()
-				}()
+				defer wg.Done()
 				for {
 					resp, err := w.ReadResponse()
 					if err != nil {
@@ -410,6 +407,7 @@ func TestProvider(t *testing.T) {
 			}
 
 			wg.Wait()
+			cancel()
 			if skipBelow == 1 {
 				return
 			}
