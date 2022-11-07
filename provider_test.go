@@ -127,6 +127,7 @@ func TestProvider(t *testing.T) {
 			},
 			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected1, expected2},
+			timeout:      2 * time.Second,
 		},
 		"KinesisErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
@@ -148,6 +149,7 @@ func TestProvider(t *testing.T) {
 			},
 			putMediaOpts: []kvm.PutMediaOption{retryOpt},
 			expected:     []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
+			timeout:      2 * time.Second,
 		},
 		"KinesisFailDumpShort": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
