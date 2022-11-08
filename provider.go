@@ -295,7 +295,9 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 					options.logger.Debugf(`Forcing next connection: { StreamID: "%s", AbsTime: %d, LastAbsTime: %d, Diff: %d }`,
 						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
 					)
-					prepareNextConn()
+					if nextConn == nil {
+						prepareNextConn()
+					}
 					switchToNextConn(absTime)
 				}
 			}
@@ -353,7 +355,9 @@ func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			opts.logger.Debugf("New conn: %p", conn)
 			err := p.putMedia(ctx, conn, chResp, opts)
+			opts.logger.Debugf("Finished conn: %p", conn)
 			if err != nil {
 				opts.onError(err)
 				return
@@ -431,6 +435,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	chMarshalDone := make(chan struct{})
 	go func() {
 		defer func() {
+			opts.logger.Debug("Finished EBML marshalling")
 			close(chMarshalDone)
 			wOutRaw.CloseWithError(io.EOF)
 		}()
@@ -447,6 +452,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 
 	var wgResp sync.WaitGroup
 	defer func() {
+		opts.logger.Debug("Flushing responses")
 		close(chRespRaw)
 		wgResp.Wait()
 	}()
@@ -463,9 +469,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	}()
 
 	errPutMedia := p.putMediaRaw(ctx, r, chRespRaw, opts)
-	if errPutMedia != nil {
-		_ = r.Close()
-	}
+	_ = r.Close()
 
 	<-chMarshalDone
 	if errMarshal != nil {
@@ -479,6 +483,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 
 	err := newMultiError(errPutMedia, errFlush, writeErr())
 	if err != nil && opts.retryCount > 0 {
+		opts.logger.Debug("Retrying PutMedia")
 		interval := opts.retryIntervalBase
 	L_RETRY:
 		for i := 0; i < opts.retryCount; i++ {
@@ -493,7 +498,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 				p.streamID, i,
 				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
 			)
-			if err = p.putMediaRaw(ctx, &nopCloser{bytes.NewReader(backup.Bytes())}, chRespRaw, opts); err == nil {
+			if err = p.putMediaRaw(ctx, bytes.NewReader(backup.Bytes()), chRespRaw, opts); err == nil {
 				break
 			}
 			if fe, ok := err.(*FragmentEventError); ok && opts.fragmentHeadDumpLen > 0 {
@@ -510,10 +515,12 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	return err
 }
 
-func (p *Provider) putMediaRaw(ctx context.Context, rc io.ReadCloser, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, rc)
+func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
+	ctx2, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx2, "POST", p.endpoint, r)
 	if err != nil {
-		_ = rc.Close()
 		return fmt.Errorf("creating http request: %w", err)
 	}
 	if p.streamID.StreamName() != nil {
@@ -531,15 +538,16 @@ func (p *Provider) putMediaRaw(ctx context.Context, rc io.ReadCloser, chResp cha
 		10*time.Minute, time.Now(),
 	)
 	if err != nil {
-		_ = rc.Close()
 		return fmt.Errorf("presigning request: %w", err)
 	}
 	res, err := opts.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("sending http request: %w", err)
 	}
+
 	defer func() {
 		_ = res.Body.Close()
+		opts.logger.Debug("API connection closed")
 	}()
 
 	if res.StatusCode != 200 {
@@ -553,18 +561,26 @@ func (p *Provider) putMediaRaw(ctx context.Context, rc io.ReadCloser, chResp cha
 	chErr := make(chan error, 1)
 	go func() {
 		for fe := range chFE {
-			if fe.IsError() && err == nil {
+			switch fe.EventType {
+			case FRAGMENT_EVENT_ERROR:
 				chErr <- fe.AsError()
+				cancel()
+			case FRAGMENT_EVENT_PERSISTED:
+				cancel()
 			}
 			chResp <- fe
 		}
 		close(chErr)
 	}()
-	if err := parseFragmentEvent(res.Body, chFE); err != nil {
+	if err := parseFragmentEvent(
+		res.Body, chFE,
+	); err != nil && err != context.Canceled {
 		return err
 	}
-	err = <-chErr
-	return err
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return <-chErr
 }
 
 func generateRandomUUID() ([]byte, error) {
