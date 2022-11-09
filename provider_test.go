@@ -571,6 +571,51 @@ func TestProvider_shutdownTwice(t *testing.T) {
 	}
 }
 
+func TestProvider_writeAfterClose(t *testing.T) {
+	server := kvsm.NewKinesisVideoServer()
+	defer server.Close()
+
+	for i := 0; i < 100 && !t.Failed(); i++ {
+		pro := newProvider(t, server)
+
+		w, err := pro.PutMedia(
+			kvm.OnError(func(e error) {}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		go func() {
+			for {
+				if _, err := w.ReadResponse(); err != nil {
+					return
+				}
+			}
+		}()
+		time.Sleep(10 * time.Millisecond)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			if err := w.Close(); err != nil {
+				t.Error(err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := w.Write(&kvm.BlockWithBaseTimecode{
+				Timecode: 1,
+				Block:    newBlock(0),
+			}); err != nil {
+				t.Error(err)
+			}
+		}()
+		wg.Wait()
+	}
+}
+
 func newProvider(t *testing.T, server *kvsm.KinesisVideoServer) *kvm.Provider {
 	cfg := &aws.Config{
 		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
