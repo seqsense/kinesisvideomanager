@@ -218,6 +218,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		o(options)
 	}
 
+	var muConn sync.Mutex
 	var conn, nextConn *connection
 	var lastAbsTime uint64
 	chConnection := make(chan *connection)
@@ -235,6 +236,9 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	var timeout *time.Timer
 	resetTimeout := func() {
 		timeout = time.AfterFunc(options.connectionTimeout, func() {
+			muConn.Lock()
+			defer muConn.Unlock()
+
 			options.logger.Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 			cleanConnections()
 		})
@@ -250,13 +254,23 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		close(allDone)
 	}()
 
+	closed := make(chan struct{})
+	var closedOnce sync.Once
+
 	shutdown := func(ctx context.Context) error {
+		closedOnce.Do(func() {
+			close(closed)
+		})
+
+		muConn.Lock()
 		timeout.Stop()
 		cleanConnections()
 		if chConnection != nil {
 			close(chConnection)
 			chConnection = nil
 		}
+		muConn.Unlock()
+
 		select {
 		case <-allDone:
 			cancel()
@@ -267,7 +281,10 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	}
 	prepareNextConn := func() {
 		nextConn = newConnection(options)
-		chConnection <- nextConn
+		select {
+		case chConnection <- nextConn:
+		case <-closed:
+		}
 	}
 	switchToNextConn := func(startTime uint64) {
 		if conn != nil {
@@ -282,6 +299,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 
 	writer := &blockWriter{
 		fnWrite: func(bt *BlockWithBaseTimecode) error {
+			var forceSwitchConn bool
 			absTime := uint64(bt.AbsTimecode())
 			if lastAbsTime != 0 {
 				diff := int64(absTime - lastAbsTime)
@@ -298,8 +316,15 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 					if nextConn == nil {
 						prepareNextConn()
 					}
-					switchToNextConn(absTime)
+					forceSwitchConn = true
 				}
+			}
+
+			muConn.Lock()
+			defer muConn.Unlock()
+
+			if forceSwitchConn {
+				switchToNextConn(absTime)
 			}
 
 			if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
@@ -321,6 +346,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 					p.streamID, bt.AbsTimecode(),
 					ErrWriteTimeout,
 				)
+			case <-closed:
 			}
 			return nil
 		},
