@@ -381,9 +381,7 @@ func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			opts.logger.Debugf("New conn: %p", conn)
 			err := p.putMedia(ctx, conn, chResp, opts)
-			opts.logger.Debugf("Finished conn: %p", conn)
 			if err != nil {
 				opts.onError(err)
 				return
@@ -461,7 +459,6 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	chMarshalDone := make(chan struct{})
 	go func() {
 		defer func() {
-			opts.logger.Debug("Finished EBML marshalling")
 			close(chMarshalDone)
 			wOutRaw.CloseWithError(io.EOF)
 		}()
@@ -478,7 +475,6 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 
 	var wgResp sync.WaitGroup
 	defer func() {
-		opts.logger.Debug("Flushing responses")
 		close(chRespRaw)
 		wgResp.Wait()
 	}()
@@ -573,7 +569,6 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 
 	defer func() {
 		_ = res.Body.Close()
-		opts.logger.Debug("API connection closed")
 	}()
 
 	if res.StatusCode != 200 {
