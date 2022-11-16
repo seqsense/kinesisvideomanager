@@ -509,7 +509,7 @@ func TestProvider_WithPutMediaLogger(t *testing.T) {
 
 	pro := newProvider(t, server)
 
-	var logger dummyWarnfLogger
+	var logger dummyDebugfLogger
 	w, err := pro.PutMedia(
 		kvm.WithPutMediaLogger(&logger),
 		kvm.OnError(func(error) {}),
@@ -648,19 +648,16 @@ func newTags(tags []kvm.SimpleTag) kvsm.TagsTest {
 	return kvsm.TagsTest{Tag: []kvm.Tag{{SimpleTag: tags}}}
 }
 
-type dummyWarnfLogger struct {
+type dummyDebugfLogger struct {
 	kvm.LoggerIF
 
 	lastErr string
 }
 
-func (l *dummyWarnfLogger) Warn(args ...interface{}) {
+func (l *dummyDebugfLogger) Debug(args ...interface{}) {
 	l.lastErr = fmt.Sprint(args...)
 }
 
-func (l *dummyWarnfLogger) Warnf(format string, args ...interface{}) {
+func (l *dummyDebugfLogger) Debugf(format string, args ...interface{}) {
 	l.lastErr = fmt.Sprintf(format, args...)
-}
-
-func (l *dummyWarnfLogger) Debugf(format string, args ...interface{}) {
 }
