@@ -239,7 +239,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 			muConn.Lock()
 			defer muConn.Unlock()
 
-			options.logger.Warnf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
+			options.logger.Debugf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
 			cleanConnections()
 		})
 	}
