@@ -377,12 +377,14 @@ func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp 
 		wg.Wait()
 		close(chResp)
 	}()
+
 	for conn := range ch {
 		conn := conn
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := p.putMedia(ctx, conn, chResp, opts); err != nil {
+			err := p.putMedia(ctx, conn, chResp, opts)
+			if err != nil {
 				opts.onError(err)
 				return
 			}
