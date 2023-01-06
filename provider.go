@@ -369,6 +369,8 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	return writer, nil
 }
 
+// putSegments encodes fragments and puts to the server.
+// chResp will be closed by putSegments.
 func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp chan *FragmentEvent, opts *PutMediaOptions) {
 	var wg sync.WaitGroup
 	defer func() {
@@ -390,6 +392,8 @@ func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp 
 	}
 }
 
+// putMedia encodes a fragment as mkv and puts to the server.
+// chResp must be closed by the caller after putMedia returned.
 func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
 	segmentUuid := opts.segmentUID
 	if segmentUuid == nil {
@@ -471,26 +475,26 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 		}
 	}()
 
-	chRespRaw := make(chan *FragmentEvent)
-
 	var wgResp sync.WaitGroup
-	defer func() {
-		close(chRespRaw)
-		wgResp.Wait()
-	}()
-	wgResp.Add(1)
-	go func() {
-		defer wgResp.Done()
-		for fe := range chRespRaw {
-			if fe.ErrorId == INVALID_MKV_DATA && conn.numBlock() == 0 {
-				// Ignore INVALID_MKV_DATA due to zero Block segment.
-				continue
-			}
-			chResp <- fe
-		}
-	}()
+	defer wgResp.Wait()
 
-	errPutMedia := p.putMediaRaw(ctx, r, chRespRaw, opts)
+	handleResp := func() chan *FragmentEvent {
+		chRespRaw := make(chan *FragmentEvent)
+		wgResp.Add(1)
+		go func() {
+			defer wgResp.Done()
+			for fe := range chRespRaw {
+				if fe.ErrorId == INVALID_MKV_DATA && conn.numBlock() == 0 {
+					// Ignore INVALID_MKV_DATA due to zero Block segment.
+					continue
+				}
+				chResp <- fe
+			}
+		}()
+		return chRespRaw
+	}
+
+	errPutMedia := p.putMediaRaw(ctx, r, handleResp(), opts)
 	_ = r.Close()
 
 	<-chMarshalDone
@@ -520,7 +524,7 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 				p.streamID, i,
 				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
 			)
-			if err = p.putMediaRaw(ctx, bytes.NewReader(backup.Bytes()), chRespRaw, opts); err == nil {
+			if err = p.putMediaRaw(ctx, bytes.NewReader(backup.Bytes()), handleResp(), opts); err == nil {
 				break
 			}
 			if fe, ok := err.(*FragmentEventError); ok && opts.fragmentHeadDumpLen > 0 {
@@ -537,9 +541,19 @@ func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *
 	return err
 }
 
+// putMediaRaw puts a fragment to the server.
+// chResp will be closed by putMediaRaw.
 func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
 	ctx2, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	var closeRespOnce sync.Once
+	defer func() {
+		closeRespOnce.Do(func() {
+			// Close chResp on error
+			close(chResp)
+		})
+	}()
 
 	req, err := http.NewRequestWithContext(ctx2, "POST", p.endpoint, r)
 	if err != nil {
@@ -578,6 +592,11 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 		}
 		return fmt.Errorf("%d: %s", res.StatusCode, string(body))
 	}
+
+	closeRespOnce.Do(func() {
+		// chResp will be closed in fragment event receive goroutine
+	})
+
 	chFE := make(chan *FragmentEvent)
 	chErr := make(chan error, 1)
 	go func() {
@@ -592,6 +611,7 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 			chResp <- fe
 		}
 		close(chErr)
+		close(chResp)
 	}()
 	if err := parseFragmentEvent(
 		res.Body, chFE,
