@@ -72,14 +72,18 @@ func TestProvider(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		mockServerOpts func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption
-		putMediaOpts   []kvm.PutMediaOption
-		expected       []kvsm.FragmentTest
-		errCheck       func(*testing.T, int, error) bool
+		mockServerOpts        func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption
+		putMediaOpts          []kvm.PutMediaOption
+		expected              []kvsm.FragmentTest
+		expectedNewConnCnt    int
+		expectedSwitchConnCnt int
+		errCheck              func(*testing.T, int, error) bool
 	}{
 		"NoError": {
-			mockServerOpts: func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption { return nil },
-			expected:       []kvsm.FragmentTest{expected0, expected1, expected2},
+			mockServerOpts:        func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption { return nil },
+			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 		},
 		"HTTPErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
@@ -100,8 +104,10 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{retryOpt},
-			expected:     []kvsm.FragmentTest{expected0, expected1, expected2},
+			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
+			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 		},
 		"DelayedHTTPErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
@@ -123,8 +129,10 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{retryOpt},
-			expected:     []kvsm.FragmentTest{expected0, expected1, expected2},
+			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
+			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 		},
 		"KinesisErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
@@ -144,8 +152,10 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{retryOpt},
-			expected:     []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
+			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
+			expected:              []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 		},
 		"KinesisFailDumpShort": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
@@ -164,7 +174,9 @@ func TestProvider(t *testing.T) {
 				kvm.WithFragmentHeadDumpLen(17),
 				kvm.WithSegmentUID([]byte{0x00, 0x01, 0x02, 0x03}),
 			},
-			expected: []kvsm.FragmentTest{},
+			expected:              []kvsm.FragmentTest{},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 			errCheck: func(t *testing.T, cnt int, err error) bool {
 				if err == nil {
 					t.Error("Expected error")
@@ -208,7 +220,9 @@ func TestProvider(t *testing.T) {
 				kvm.WithFragmentHeadDumpLen(512),
 				kvm.WithSegmentUID([]byte{0x00, 0x01, 0x02, 0x03}),
 			},
-			expected: []kvsm.FragmentTest{},
+			expected:              []kvsm.FragmentTest{},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 			errCheck: func(t *testing.T, cnt int, err error) bool {
 				if err == nil {
 					t.Error("Expected error")
@@ -278,8 +292,10 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{retryOpt},
-			expected:     []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
+			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
+			expected:              []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 		},
 		"DisconnectRetry": {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
@@ -297,8 +313,10 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{retryOpt},
-			expected:     []kvsm.FragmentTest{expected0, expected1, expected2},
+			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
+			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 		},
 		"DelayedDisconnectRetry": {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
@@ -317,8 +335,10 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts: []kvm.PutMediaOption{retryOpt},
-			expected:     []kvsm.FragmentTest{expected0, expected1, expected2},
+			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
+			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
+			expectedNewConnCnt:    3,
+			expectedSwitchConnCnt: 3,
 		},
 	}
 
@@ -353,6 +373,7 @@ func TestProvider(t *testing.T) {
 
 			var cntErr, cntTag uint32
 			var skipBelow uint32
+			var cntNewConn, cntSwitchConn uint32
 			opts := []kvm.PutMediaOption{
 				kvm.WithFragmentTimecodeType(kvm.FragmentTimecodeTypeRelative),
 				kvm.WithProducerStartTimestamp(startTimestamp),
@@ -369,6 +390,12 @@ func TestProvider(t *testing.T) {
 							atomic.StoreUint32(&skipBelow, 1)
 						}
 					}
+				}),
+				kvm.OnPutMediaNewConn(func() {
+					atomic.AddUint32(&cntNewConn, 1)
+				}),
+				kvm.OnPutMediaSwitchConn(func(uint64) {
+					atomic.AddUint32(&cntSwitchConn, 1)
 				}),
 			}
 			opts = append(opts, testCase.putMediaOpts...)
@@ -425,6 +452,12 @@ func TestProvider(t *testing.T) {
 				)
 			}
 
+			if int(cntNewConn) != testCase.expectedNewConnCnt {
+				t.Errorf("Expected count of new connection: %d, got: %d", testCase.expectedNewConnCnt, cntNewConn)
+			}
+			if int(cntSwitchConn) != testCase.expectedSwitchConnCnt {
+				t.Errorf("Expected count of switch connection: %d, got: %d", testCase.expectedSwitchConnCnt, cntSwitchConn)
+			}
 			for _, fragment := range testCase.expected {
 				actual, ok := server.GetFragment(fragment.Cluster.Timecode)
 				if !ok {
