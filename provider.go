@@ -137,13 +137,16 @@ type PutMediaOptions struct {
 	connectionTimeout      time.Duration
 	httpClient             http.Client
 	tags                   func() []SimpleTag
-	onError                func(error)
 	retryCount             int
 	retryIntervalBase      time.Duration
 	fragmentHeadDumpLen    int
 	lenBlockBuffer         int
 	lenResponseBuffer      int
 	logger                 LoggerIF
+
+	onError      func(error)
+	onNewConn    func()
+	onSwitchConn func(uint64)
 }
 
 type PutMediaOption func(*PutMediaOptions)
@@ -280,6 +283,9 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		return nil
 	}
 	prepareNextConn := func() {
+		if options.onNewConn != nil {
+			options.onNewConn()
+		}
 		nextConn = newConnection(options)
 		select {
 		case chConnection <- nextConn:
@@ -287,6 +293,9 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		}
 	}
 	switchToNextConn := func(startTime uint64) {
+		if options.onSwitchConn != nil {
+			options.onSwitchConn(startTime)
+		}
 		if conn != nil {
 			conn.close()
 		}
@@ -682,6 +691,24 @@ func WithTags(tags func() []SimpleTag) PutMediaOption {
 func OnError(onError func(error)) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.onError = onError
+	}
+}
+
+// OnPutMediaNewConn registers a func that will be called before
+// creating a new PutMedia API connection.
+// Media stream processing is blocked until the func returns.
+func OnPutMediaNewConn(onNewConn func()) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.onNewConn = onNewConn
+	}
+}
+
+// OnPutMediaSwitchConn registers a func that will be called before
+// switching a PutMedia API connection.
+// Media stream processing is blocked until the func returns.
+func OnPutMediaSwitchConn(onSwitchConn func(timecode uint64)) PutMediaOption {
+	return func(p *PutMediaOptions) {
+		p.onSwitchConn = onSwitchConn
 	}
 }
 
