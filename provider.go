@@ -703,7 +703,7 @@ func OnPutMediaNewConn(onNewConn func()) PutMediaOption {
 	}
 }
 
-// OnPutMediaNewConn registers a func that will be called before
+// OnPutMediaSwitchConn registers a func that will be called before
 // switching a PutMedia API connection.
 // Media stream processing is blocked until the func returns.
 func OnPutMediaSwitchConn(onSwitchConn func(timecode uint64)) PutMediaOption {
