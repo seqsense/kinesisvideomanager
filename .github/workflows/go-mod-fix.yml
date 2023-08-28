@@ -21,4 +21,4 @@ jobs:
           commit_style: squash
           push: force
           goprivate: github.com/seqsense
-          go_mod_paths: ./
+          go_mod_paths: ./ ./examples/
