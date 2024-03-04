@@ -16,6 +16,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/aws/aws-sdk-go/aws/session"
 
@@ -25,11 +26,16 @@ import (
 )
 
 const (
-	streamName = "test-stream"
+	defaultStreamName = "test-stream"
 )
 
 func main() {
 	log.SetFlags(log.Lmicroseconds)
+
+	streamName := defaultStreamName
+	if len(os.Args) > 1 {
+		streamName = os.Args[1]
+	}
 
 	sess := session.Must(session.NewSession())
 	manager, err := kvm.New(sess)
