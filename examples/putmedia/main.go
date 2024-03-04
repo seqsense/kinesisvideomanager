@@ -64,7 +64,7 @@ func main() {
 			"vp8enc" +
 			" buffer-size=65536 deadline=5" +
 			" target-bitrate=200000 threads=2" +
-			" overshoot=125 undershoot=50 ! " +
+			" undershoot=50 ! " +
 			"appsink name=sink " +
 			"t. ! queue ! videoconvert ! ximagesink",
 	)
