@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/at-wat/ebml-go v0.17.1
-	github.com/aws/aws-sdk-go v1.53.18
+	github.com/aws/aws-sdk-go v1.53.19
 	github.com/google/uuid v1.6.0
 )
 
