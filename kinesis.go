@@ -16,6 +16,8 @@ package kinesisvideomanager
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,7 +34,7 @@ const (
 
 type Client struct {
 	kv        *kinesisvideo.Client
-	signer    *v4.Signer
+	signer    v4.HTTPSigner
 	cliConfig aws.Config
 }
 
@@ -44,7 +46,7 @@ func New(cfg aws.Config) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) presign(ctx context.Context, req *http.Request) error {
+func (c *Client) sign(ctx context.Context, req *http.Request, payload []byte) error {
 	cred, err := c.cliConfig.Credentials.Retrieve(ctx)
 	if err != nil {
 		return err
@@ -54,8 +56,11 @@ func (c *Client) presign(ctx context.Context, req *http.Request) error {
 	query.Set("X-Amz-Expires", strconv.FormatInt(int64(presignExpires/time.Second), 10))
 	req.URL.RawQuery = query.Encode()
 
-	if _, _, err = c.signer.PresignHTTP(
-		ctx, cred, req, "",
+	h := sha256.Sum256(payload)
+	hs := hex.EncodeToString(h[:])
+
+	if err := c.signer.SignHTTP(
+		ctx, cred, req, hs,
 		presignServiceName, c.cliConfig.Region,
 		time.Now(),
 	); err != nil {

@@ -110,17 +110,16 @@ func (c *Consumer) GetMedia(opts ...GetMediaOption) (BlockReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	bodyReader := bytes.NewReader(body)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.endpoint, bytes.NewReader(body))
 	if err != nil {
 		cancel()
 		return nil, err
 	}
 	req.Header.Set("Content-type", "application/json")
 
-	if err := c.cli.presign(ctx, req); err != nil {
+	if err := c.cli.sign(ctx, req, body); err != nil {
 		cancel()
 		return nil, err
 	}

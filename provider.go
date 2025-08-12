@@ -578,7 +578,7 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 	req.Header.Set("x-amzn-fragment-timecode-type", string(opts.fragmentTimecodeType))
 	req.Header.Set("x-amzn-producer-start-timestamp", opts.producerStartTimestamp)
 
-	if err := p.cli.presign(ctx, req); err != nil {
+	if err := p.cli.sign(ctx, req, nil); err != nil {
 		return fmt.Errorf("presigning http request: %w", err)
 	}
 	res, err := opts.httpClient.Do(req)
