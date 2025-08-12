@@ -25,26 +25,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/signer/v4"
-	"github.com/aws/aws-sdk-go/service/kinesisvideo"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kinesisvideo"
+	"github.com/aws/aws-sdk-go-v2/service/kinesisvideo/types"
 
 	"github.com/at-wat/ebml-go"
 )
 
 type Consumer struct {
-	streamID  StreamID
-	endpoint  string
-	signer    *v4.Signer
-	httpCli   http.Client
-	cliConfig *client.Config
+	streamID StreamID
+	endpoint string
+	cli      *Client
+	httpCli  aws.HTTPClient
 }
 
-func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
+// Consumer creates a KVS consumer client.
+// Passed context is used only to get the KVS data endpint
+// and does not control the future data read session.
+func (c *Client) Consumer(ctx context.Context, streamID StreamID) (*Consumer, error) {
 	ep, err := c.kv.GetDataEndpoint(
+		ctx,
 		&kinesisvideo.GetDataEndpointInput{
-			APIName:    aws.String("GET_MEDIA"),
+			APIName:    types.APINameGetMedia,
 			StreamName: streamID.StreamName(),
 			StreamARN:  streamID.StreamARN(),
 		},
@@ -53,10 +55,10 @@ func (c *Client) Consumer(streamID StreamID) (*Consumer, error) {
 		return nil, err
 	}
 	return &Consumer{
-		streamID:  streamID,
-		endpoint:  *ep.DataEndpoint + "/getMedia",
-		signer:    c.signer,
-		cliConfig: c.cliConfig,
+		streamID: streamID,
+		endpoint: *ep.DataEndpoint + "/getMedia",
+		cli:      c,
+		httpCli:  &http.Client{},
 	}, nil
 }
 
@@ -118,12 +120,7 @@ func (c *Consumer) GetMedia(opts ...GetMediaOption) (BlockReader, error) {
 	}
 	req.Header.Set("Content-type", "application/json")
 
-	_, err = c.signer.Presign(
-		req, bodyReader,
-		c.cliConfig.SigningName, c.cliConfig.SigningRegion,
-		10*time.Minute, time.Now(),
-	)
-	if err != nil {
+	if err := c.cli.presign(ctx, req); err != nil {
 		cancel()
 		return nil, err
 	}
