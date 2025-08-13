@@ -15,26 +15,58 @@
 package kinesisvideomanager
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/signer/v4"
-	"github.com/aws/aws-sdk-go/service/kinesisvideo"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/service/kinesisvideo"
+)
+
+const (
+	presignServiceName = "kinesisvideo"
+	presignExpires     = 10 * time.Minute
 )
 
 type Client struct {
-	kv        *kinesisvideo.KinesisVideo
-	signer    *v4.Signer
-	cliConfig *client.Config
+	kv        *kinesisvideo.Client
+	signer    v4.HTTPSigner
+	cliConfig aws.Config
 }
 
-func New(sess client.ConfigProvider, cfgs ...*aws.Config) (*Client, error) {
-	cliConfig := sess.ClientConfig("kinesisvideo")
-
+func New(cfg aws.Config) (*Client, error) {
 	return &Client{
-		kv:        kinesisvideo.New(sess, cfgs...),
-		signer:    v4.NewSigner(cliConfig.Config.Credentials),
-		cliConfig: &cliConfig,
+		kv:        kinesisvideo.NewFromConfig(cfg),
+		signer:    v4.NewSigner(),
+		cliConfig: cfg,
 	}, nil
+}
+
+func (c *Client) sign(ctx context.Context, req *http.Request, payload []byte) error {
+	cred, err := c.cliConfig.Credentials.Retrieve(ctx)
+	if err != nil {
+		return err
+	}
+
+	query := req.URL.Query()
+	query.Set("X-Amz-Expires", strconv.FormatInt(int64(presignExpires/time.Second), 10))
+	req.URL.RawQuery = query.Encode()
+
+	h := sha256.Sum256(payload)
+	hs := hex.EncodeToString(h[:])
+
+	if err := c.signer.SignHTTP(
+		ctx, cred, req, hs,
+		presignServiceName, c.cliConfig.Region,
+		time.Now(),
+	); err != nil {
+		return err
+	}
+	return nil
 }
 
 type StreamID interface {

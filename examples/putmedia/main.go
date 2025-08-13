@@ -15,11 +15,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
 
 	"github.com/at-wat/ebml-go"
 	kvm "github.com/seqsense/kinesisvideomanager"
@@ -39,13 +40,19 @@ func main() {
 		streamName = os.Args[1]
 	}
 
-	sess := session.Must(session.NewSession())
-	manager, err := kvm.New(sess)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	manager, err := kvm.New(cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	pro, err := manager.Provider(kvm.StreamName(streamName), []kvm.TrackEntry{
+	pro, err := manager.Provider(ctx, kvm.StreamName(streamName), []kvm.TrackEntry{
 		{
 			TrackNumber: 1,
 			TrackUID:    123,
