@@ -29,9 +29,8 @@ import (
 	"time"
 
 	"github.com/at-wat/ebml-go"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 
 	kvm "github.com/seqsense/kinesisvideomanager"
 	kvsm "github.com/seqsense/kinesisvideomanager/kvsmockserver"
@@ -491,7 +490,7 @@ func TestProvider_WithHttpClient(t *testing.T) {
 	}
 
 	// Cause timeout error
-	client := http.Client{
+	client := &http.Client{
 		Timeout: blockTime / 2,
 	}
 	var errBg error
@@ -650,17 +649,20 @@ func TestProvider_writeAfterClose(t *testing.T) {
 }
 
 func newProvider(t *testing.T, server *kvsm.KinesisVideoServer) *kvm.Provider {
-	cfg := &aws.Config{
-		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
-		Region:      aws.String("ap-northeast-1"),
-		Endpoint:    &server.URL,
+	cfg := aws.Config{
+		Credentials:  credentials.NewStaticCredentialsProvider("key", "secret", "token"),
+		Region:       "ap-northeast-1",
+		BaseEndpoint: &server.URL,
 	}
-	cli, err := kvm.New(session.Must(session.NewSession(cfg)), cfg)
+	cli, err := kvm.New(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create new client: %v", err)
 	}
 
-	pro, err := cli.Provider(kvm.StreamName("test-stream"), []kvm.TrackEntry{})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	pro, err := cli.Provider(ctx, kvm.StreamName("test-stream"), []kvm.TrackEntry{})
 	if err != nil {
 		t.Fatalf("Failed to create new provider: %v", err)
 	}

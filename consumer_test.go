@@ -23,9 +23,8 @@ import (
 	"time"
 
 	"github.com/at-wat/ebml-go"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 
 	kvm "github.com/seqsense/kinesisvideomanager"
 	kvsm "github.com/seqsense/kinesisvideomanager/kvsmockserver"
@@ -35,17 +34,20 @@ func TestConsumer(t *testing.T) {
 	server := kvsm.NewKinesisVideoServer()
 	defer server.Close()
 
-	cfg := &aws.Config{
-		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
-		Region:      aws.String("ap-northeast-1"),
-		Endpoint:    &server.URL,
+	cfg := aws.Config{
+		Credentials:  credentials.NewStaticCredentialsProvider("key", "secret", "token"),
+		Region:       "ap-northeast-1",
+		BaseEndpoint: &server.URL,
 	}
-	cli, err := kvm.New(session.Must(session.NewSession(cfg)), cfg)
+	cli, err := kvm.New(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create new client: %v", err)
 	}
 
-	con, err := cli.Consumer(kvm.StreamName("test-stream"))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	con, err := cli.Consumer(ctx, kvm.StreamName("test-stream"))
 	if err != nil {
 		t.Fatalf("Failed to create new consumer: %v", err)
 	}
@@ -72,8 +74,6 @@ func TestConsumer(t *testing.T) {
 
 	var blocks []kvm.BlockWithBaseTimecode
 	var tags []kvm.SimpleTag
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
 
 	opts := []kvm.GetMediaOption{
 		kvm.WithStartSelectorProducerTimestamp(time.Unix(1001, 0)),

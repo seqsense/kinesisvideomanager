@@ -30,10 +30,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/client"
-	v4 "github.com/aws/aws-sdk-go/aws/signer/v4"
-	"github.com/aws/aws-sdk-go/service/kinesisvideo"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kinesisvideo"
+	"github.com/aws/aws-sdk-go-v2/service/kinesisvideo/types"
 
 	"github.com/at-wat/ebml-go"
 
@@ -59,19 +58,22 @@ func init() {
 }
 
 type Provider struct {
-	streamID  StreamID
-	endpoint  string
-	signer    *v4.Signer
-	cliConfig *client.Config
-	tracks    []TrackEntry
+	streamID StreamID
+	endpoint string
+	tracks   []TrackEntry
+	cli      *Client
 
 	bufferPool sync.Pool
 }
 
-func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, error) {
+// Provider creates a KVS provider client.
+// Passed context is used only to get the KVS data endpint
+// and does not control the future data write session.
+func (c *Client) Provider(ctx context.Context, streamID StreamID, tracks []TrackEntry) (*Provider, error) {
 	ep, err := c.kv.GetDataEndpoint(
+		ctx,
 		&kinesisvideo.GetDataEndpointInput{
-			APIName:    aws.String("PUT_MEDIA"),
+			APIName:    types.APINamePutMedia,
 			StreamName: streamID.StreamName(),
 			StreamARN:  streamID.StreamARN(),
 		},
@@ -80,11 +82,10 @@ func (c *Client) Provider(streamID StreamID, tracks []TrackEntry) (*Provider, er
 		return nil, err
 	}
 	return &Provider{
-		streamID:  streamID,
-		endpoint:  *ep.DataEndpoint + "/putMedia",
-		signer:    c.signer,
-		cliConfig: c.cliConfig,
-		tracks:    tracks,
+		streamID: streamID,
+		endpoint: *ep.DataEndpoint + "/putMedia",
+		tracks:   tracks,
+		cli:      c,
 		bufferPool: sync.Pool{
 			New: func() interface{} {
 				return bytes.NewBuffer(make([]byte, 1024))
@@ -135,7 +136,7 @@ type PutMediaOptions struct {
 	fragmentTimecodeType   FragmentTimecodeType
 	producerStartTimestamp string
 	connectionTimeout      time.Duration
-	httpClient             http.Client
+	httpClient             aws.HTTPClient
 	tags                   func() []SimpleTag
 	retryCount             int
 	retryIntervalBase      time.Duration
@@ -210,7 +211,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		producerStartTimestamp: "0",
 		connectionTimeout:      15 * time.Second,
 		onError:                func(err error) { options.logger.Error(err) },
-		httpClient: http.Client{
+		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
 		lenBlockBuffer:    10,
@@ -577,13 +578,8 @@ func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *Fr
 	req.Header.Set("x-amzn-fragment-timecode-type", string(opts.fragmentTimecodeType))
 	req.Header.Set("x-amzn-producer-start-timestamp", opts.producerStartTimestamp)
 
-	_, err = p.signer.Presign(
-		req, bytes.NewReader([]byte{}),
-		p.cliConfig.SigningName, p.cliConfig.SigningRegion,
-		10*time.Minute, time.Now(),
-	)
-	if err != nil {
-		return fmt.Errorf("presigning request: %w", err)
+	if err := p.cli.sign(ctx, req, nil); err != nil {
+		return fmt.Errorf("presigning http request: %w", err)
 	}
 	res, err := opts.httpClient.Do(req)
 	if err != nil {
@@ -676,7 +672,7 @@ func WithFragmentHeadDumpLen(n int) PutMediaOption {
 	}
 }
 
-func WithHttpClient(client http.Client) PutMediaOption {
+func WithHttpClient(client aws.HTTPClient) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.httpClient = client
 	}
