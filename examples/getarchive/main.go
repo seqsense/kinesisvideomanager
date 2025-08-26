@@ -52,6 +52,10 @@ func main() {
 	list.Sort()
 	list.Uniq()
 
+	if list.Len() == 0 {
+		log.Fatal("No fragments are found in the last 1 hour. Run putmedia example first to store some fragments.")
+	}
+
 	log.Printf("fragments: %v", list)
 
 	l, err := gstlaunch.New(
