@@ -51,8 +51,7 @@ func (e *FragmentError) Error() string {
 func New(ctx context.Context, streamID kvm.StreamID, cfg aws.Config) (*Client, error) {
 	kv := kinesisvideo.NewFromConfig(cfg)
 
-	epListFragments, err := kv.GetDataEndpoint(
-		ctx,
+	epListFragments, err := kv.GetDataEndpoint(ctx,
 		&kinesisvideo.GetDataEndpointInput{
 			APIName:    kinesisvideo_types.APINameListFragments,
 			StreamName: streamID.StreamName(),
@@ -65,8 +64,7 @@ func New(ctx context.Context, streamID kvm.StreamID, cfg aws.Config) (*Client, e
 		o.BaseEndpoint = epListFragments.DataEndpoint
 	})
 
-	epGetMediaForFragmentList, err := kv.GetDataEndpoint(
-		ctx,
+	epGetMediaForFragmentList, err := kv.GetDataEndpoint(ctx,
 		&kinesisvideo.GetDataEndpointInput{
 			APIName:    kinesisvideo_types.APINameGetMediaForFragmentList,
 			StreamName: streamID.StreamName(),
