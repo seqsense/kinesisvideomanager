@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"time"
 
@@ -75,8 +76,13 @@ func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer
 	mux.HandleFunc("/putMedia", s.putMedia)
 	mux.HandleFunc("/getMedia", s.getMedia)
 	mux.HandleFunc("/listFragments", s.listFragments)
+	mux.HandleFunc("/getMediaForFragmentList", s.getMediaForFragmentList)
 	s.Server = httptest.NewServer(mux)
 	return s
+}
+
+func fragmentNumber(fragment FragmentTest) string {
+	return fmt.Sprintf("%d", fragment.Cluster.Timecode)
 }
 
 func (s *KinesisVideoServer) GetFragment(timecode uint64) (FragmentTest, bool) {
@@ -228,6 +234,80 @@ func (s *KinesisVideoServer) listFragments(w http.ResponseWriter, r *http.Reques
 	w.Write(b)
 }
 
+func (s *KinesisVideoServer) getMediaForFragmentList(w http.ResponseWriter, r *http.Request) {
+	bs, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+	body := &getMediaForFragmentListInput{}
+	if err := json.Unmarshal(bs, body); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+
+	// Validate request
+	for _, id := range body.Fragments {
+		timecode, err := strconv.ParseUint(id, 10, 64)
+		if err != nil {
+			w.WriteHeader(400)
+			fmt.Fprintf(w, "invalid fragment number")
+			return
+		}
+		if _, ok := s.fragments[timecode]; !ok {
+			w.WriteHeader(400)
+			fmt.Fprintf(w, "unknown fragment number")
+			return
+		}
+	}
+
+	header := &struct {
+		Header  kvm.EBMLHeader `ebml:"EBML"`
+		Segment segment        `ebml:",size=unknown"`
+	}{}
+	if err := ebml.Marshal(header, w); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+
+	for _, id := range body.Fragments {
+		timecode, _ := strconv.ParseUint(id, 10, 64)
+		fragment := s.fragments[timecode]
+
+		data := &struct {
+			Cluster ClusterTest
+			Tags    TagsTest
+		}{
+			Cluster: fragment.Cluster,
+			Tags: TagsTest{
+				Tag: append(fragment.Tags.Tag, kvm.Tag{
+					SimpleTag: []kvm.SimpleTag{{
+						TagName:   kvm.TagNameFragmentNumber,
+						TagString: id,
+					}},
+				}),
+			},
+		}
+		if err := ebml.Marshal(data, w); err != nil {
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "%v", err)
+			return
+		}
+	}
+
+	footer := &struct {
+		Segment segment `ebml:",size=0"`
+	}{}
+	if err := ebml.Marshal(footer, w); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+}
+
 type segment struct {
 	Info    kvm.Info
 	Tracks  kvm.Tracks
@@ -241,6 +321,12 @@ type FragmentTest struct {
 }
 
 type ClusterTest struct {
+	Timecode    uint64
+	Position    uint64 `ebml:",omitempty"`
+	SimpleBlock []ebml.Block
+}
+
+type ClusterTestChan struct {
 	Timecode    uint64
 	Position    uint64 `ebml:",omitempty"`
 	SimpleBlock []ebml.Block

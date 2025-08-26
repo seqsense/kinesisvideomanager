@@ -44,3 +44,9 @@ type fragment struct {
 	ProducerTimestamp            *float64
 	ServerTimestamp              *float64
 }
+
+type getMediaForFragmentListInput struct {
+	Fragments  []string
+	StreamARN  *string
+	StreamName *string
+}
