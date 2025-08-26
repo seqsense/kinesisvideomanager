@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/at-wat/ebml-go"
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	kvm "github.com/seqsense/kinesisvideomanager"
 )
 
@@ -33,6 +35,9 @@ type KinesisVideoServer struct {
 	fragments map[uint64]FragmentTest
 	blockTime time.Duration
 	mu        sync.Mutex
+
+	producerTimestampOrigin float64
+	serverTimestampOrigin   float64
 
 	putMediaHook func(uint64, *FragmentTest, http.ResponseWriter) bool
 }
@@ -51,6 +56,13 @@ func WithPutMediaHook(h func(uint64, *FragmentTest, http.ResponseWriter) bool) K
 	}
 }
 
+func WithTimestampOrigin(producer, server float64) KinesisVideoServerOption {
+	return func(s *KinesisVideoServer) {
+		s.producerTimestampOrigin = producer
+		s.serverTimestampOrigin = server
+	}
+}
+
 func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer {
 	s := &KinesisVideoServer{
 		fragments: make(map[uint64]FragmentTest),
@@ -62,6 +74,7 @@ func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer
 	mux.HandleFunc("/getDataEndpoint", s.getDataEndpoint)
 	mux.HandleFunc("/putMedia", s.putMedia)
 	mux.HandleFunc("/getMedia", s.getMedia)
+	mux.HandleFunc("/listFragments", s.listFragments)
 	s.Server = httptest.NewServer(mux)
 	return s
 }
@@ -159,6 +172,60 @@ func (s *KinesisVideoServer) getMedia(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Write(buf.Bytes())
+}
+
+func (s *KinesisVideoServer) listFragments(w http.ResponseWriter, r *http.Request) {
+	bs, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+	body := &listFragmentsInput{}
+	if err := json.Unmarshal(bs, body); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+
+	out := &listFragmentsOutput{
+		Fragments: []fragment{},
+	}
+	for _, f := range s.fragments {
+		if body.FragmentSelector != nil {
+			var ts float64
+			switch body.FragmentSelector.FragmentSelectorType {
+			case "PRODUCER_TIMESTAMP":
+				ts = float64(f.Cluster.Timecode)/1000 + s.producerTimestampOrigin
+			case "SERVER_TIMESTAMP":
+				ts = float64(f.Cluster.Timecode)/1000 + s.serverTimestampOrigin
+			default:
+				w.WriteHeader(500)
+				fmt.Fprintf(w, "invalid FragmentSelectorType")
+				return
+			}
+			tr := body.FragmentSelector.TimestampRange
+			if tr.StartTimestamp != nil && ts < *tr.StartTimestamp {
+				continue
+			}
+			if tr.EndTimestamp != nil && ts > *tr.EndTimestamp {
+				continue
+			}
+		}
+		out.Fragments = append(out.Fragments, fragment{
+			FragmentNumber:    aws.String(fmt.Sprintf("%d", f.Cluster.Timecode)),
+			ProducerTimestamp: aws.Float64(float64(f.Cluster.Timecode / 1000)),
+			ServerTimestamp:   aws.Float64(float64(f.Cluster.Timecode / 1000)),
+		})
+	}
+
+	b, err := json.Marshal(out)
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+	w.Write(b)
 }
 
 type segment struct {
