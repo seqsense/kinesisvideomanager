@@ -1,6 +1,6 @@
 {
   "extends": [
-    "config:base",
+    "config:recommended",
     "schedule:weekends",
     "docker:disable"
   ],
@@ -12,38 +12,40 @@
   ],
   "packageRules": [
     {
-      "matchPackagePatterns": [
-        "^golang.org/x/",
-        "google.golang.org/genproto"
-      ],
       "schedule": [
         "on the first day of the month"
+      ],
+      "matchPackageNames": [
+        "/^golang.org/x//",
+        "/google.golang.org/genproto/"
       ]
     },
     {
-      "matchPackagePatterns": [
-        "^github.com/seqsense/"
-      ],
       "schedule": [
         "at any time"
+      ],
+      "matchPackageNames": [
+        "/^github.com/seqsense//"
       ]
     },
     {
-      "matchPackagePatterns": [
-        "^github.com/aws/aws-sdk-go",
-        "^github.com/golang/protobuf",
-        "^google.golang.org/grpc"
-      ],
-      "separateMinorPatch": true
+      "separateMinorPatch": true,
+      "matchPackageNames": [
+        "/^github.com/aws/aws-sdk-go/",
+        "/^github.com/golang/protobuf/",
+        "/^google.golang.org/grpc/"
+      ]
     },
     {
-      "matchPackagePatterns": [
-        "^github.com/aws/aws-sdk-go",
-        "^github.com/golang/protobuf",
-        "^google.golang.org/grpc"
+      "matchUpdateTypes": [
+        "patch"
       ],
-      "matchUpdateTypes": ["patch"],
-      "automerge": true
+      "automerge": true,
+      "matchPackageNames": [
+        "/^github.com/aws/aws-sdk-go/",
+        "/^github.com/golang/protobuf/",
+        "/^google.golang.org/grpc/"
+      ]
     }
   ],
   "ignorePaths": [],
