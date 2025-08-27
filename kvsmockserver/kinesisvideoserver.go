@@ -181,14 +181,8 @@ func (s *KinesisVideoServer) getMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *KinesisVideoServer) listFragments(w http.ResponseWriter, r *http.Request) {
-	bs, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(500)
-		fmt.Fprintf(w, "%v", err)
-		return
-	}
 	body := &listFragmentsInput{}
-	if err := json.Unmarshal(bs, body); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(body); err != nil {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "%v", err)
 		return
@@ -225,24 +219,16 @@ func (s *KinesisVideoServer) listFragments(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	b, err := json.Marshal(out)
-	if err != nil {
+	if err := json.NewEncoder(w).Encode(out); err != nil {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "%v", err)
 		return
 	}
-	w.Write(b)
 }
 
 func (s *KinesisVideoServer) getMediaForFragmentList(w http.ResponseWriter, r *http.Request) {
-	bs, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(500)
-		fmt.Fprintf(w, "%v", err)
-		return
-	}
 	body := &getMediaForFragmentListInput{}
-	if err := json.Unmarshal(bs, body); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(body); err != nil {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "%v", err)
 		return
@@ -296,15 +282,6 @@ func (s *KinesisVideoServer) getMediaForFragmentList(w http.ResponseWriter, r *h
 			fmt.Fprintf(w, "%v", err)
 			return
 		}
-	}
-
-	footer := &struct {
-		Segment segment `ebml:",size=0"`
-	}{}
-	if err := ebml.Marshal(footer, w); err != nil {
-		w.WriteHeader(500)
-		fmt.Fprintf(w, "%v", err)
-		return
 	}
 }
 
