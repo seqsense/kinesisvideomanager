@@ -126,6 +126,9 @@ func TestGetMediaForFragmentList(t *testing.T) {
 		t.Error(err)
 	}); err != nil {
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			// HTTP response reader returns EOF to the successful read with data
+			// and ebml-go return unexpected EOF. Temporary ignore unexpected EOF error.
+			// https://github.com/at-wat/ebml-go/issues/193
 			t.Error(err)
 		}
 	}
