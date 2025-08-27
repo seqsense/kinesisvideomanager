@@ -32,5 +32,5 @@ github.com/aws/smithy-go v1.22.5 h1:P9ATCXPMb2mPjYBgueqJNCA5S9UfktsW0tTxi+a7eqw=
 github.com/aws/smithy-go v1.22.5/go.mod h1:t1ufH5HMublsJYulve2RKmHDC15xu1f26kHCp/HgceI=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/seqsense/sq-gst-go v0.5.3 h1:EwqQpjWWptfej0uoja/Ip/sMXfTUVcYQRkglMTkAQx0=
-github.com/seqsense/sq-gst-go v0.5.3/go.mod h1:M4yhMFwHDZ4nPDlicaQB4j+VFLATz8+YerRw5ySAtW0=
+github.com/seqsense/sq-gst-go v0.5.4 h1:RWRe0L25DSi6bFxy6ta25gWYrFKfZdLMVQVeJrBbU4I=
+github.com/seqsense/sq-gst-go v0.5.4/go.mod h1:M4yhMFwHDZ4nPDlicaQB4j+VFLATz8+YerRw5ySAtW0=
