@@ -21,7 +21,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"sync"
 	"time"
 
@@ -33,7 +32,7 @@ import (
 
 type KinesisVideoServer struct {
 	*httptest.Server
-	fragments map[uint64]FragmentTest
+	fragments map[string]FragmentTest
 	blockTime time.Duration
 	mu        sync.Mutex
 
@@ -66,7 +65,7 @@ func WithTimestampOrigin(producer, server float64) KinesisVideoServerOption {
 
 func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer {
 	s := &KinesisVideoServer{
-		fragments: make(map[uint64]FragmentTest),
+		fragments: make(map[string]FragmentTest),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -81,17 +80,17 @@ func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer
 	return s
 }
 
-func fragmentNumber(fragment FragmentTest) string {
-	return fmt.Sprintf("%d", fragment.Cluster.Timecode)
+func FragmentNumberFromTimecode(tc uint64) string {
+	return fmt.Sprintf("%047d", tc)
 }
 
 func (s *KinesisVideoServer) GetFragment(timecode uint64) (FragmentTest, bool) {
-	fragment, ok := s.fragments[timecode]
+	fragment, ok := s.fragments[FragmentNumberFromTimecode(timecode)]
 	return fragment, ok
 }
 
 func (s *KinesisVideoServer) RegisterFragment(fragment FragmentTest) {
-	s.fragments[fragment.Cluster.Timecode] = fragment
+	s.fragments[FragmentNumberFromTimecode(fragment.Cluster.Timecode)] = fragment
 }
 
 func (s *KinesisVideoServer) getDataEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -135,12 +134,12 @@ func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.mu.Lock()
-	s.fragments[data.Segment.Cluster.Timecode] = fragment
+	s.fragments[FragmentNumberFromTimecode(data.Segment.Cluster.Timecode)] = fragment
 	s.mu.Unlock()
 
 	fmt.Fprintf(w,
 		`{"EventType":"PERSISTED", "FragmentTimecode":%d, "FragmentNumber":"%s"}`,
-		baseTimecode+data.Segment.Cluster.Timecode, "12345678901234567890123456789012345678901234567",
+		baseTimecode+data.Segment.Cluster.Timecode, FragmentNumberFromTimecode(data.Segment.Cluster.Timecode),
 	)
 }
 
@@ -213,7 +212,7 @@ func (s *KinesisVideoServer) listFragments(w http.ResponseWriter, r *http.Reques
 			}
 		}
 		out.Fragments = append(out.Fragments, fragment{
-			FragmentNumber:    aws.String(fmt.Sprintf("%d", f.Cluster.Timecode)),
+			FragmentNumber:    aws.String(FragmentNumberFromTimecode(f.Cluster.Timecode)),
 			ProducerTimestamp: aws.Float64(float64(f.Cluster.Timecode / 1000)),
 			ServerTimestamp:   aws.Float64(float64(f.Cluster.Timecode / 1000)),
 		})
@@ -236,13 +235,7 @@ func (s *KinesisVideoServer) getMediaForFragmentList(w http.ResponseWriter, r *h
 
 	// Validate request
 	for _, id := range body.Fragments {
-		timecode, err := strconv.ParseUint(id, 10, 64)
-		if err != nil {
-			w.WriteHeader(400)
-			fmt.Fprintf(w, "invalid fragment number")
-			return
-		}
-		if _, ok := s.fragments[timecode]; !ok {
+		if _, ok := s.fragments[id]; !ok {
 			w.WriteHeader(400)
 			fmt.Fprintf(w, "unknown fragment number")
 			return
@@ -260,8 +253,7 @@ func (s *KinesisVideoServer) getMediaForFragmentList(w http.ResponseWriter, r *h
 	}
 
 	for _, id := range body.Fragments {
-		timecode, _ := strconv.ParseUint(id, 10, 64)
-		fragment := s.fragments[timecode]
+		fragment := s.fragments[id]
 
 		data := &struct {
 			Cluster ClusterTest
