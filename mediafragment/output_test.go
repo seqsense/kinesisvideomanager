@@ -19,15 +19,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	kvam "github.com/aws/aws-sdk-go/service/kinesisvideoarchivedmedia"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	kvam "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia"
+	kvam_types "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia/types"
 )
 
 func TestListFragmentsOutput(t *testing.T) {
 	testData := func() *ListFragmentsOutput {
 		return &ListFragmentsOutput{
 			&kvam.ListFragmentsOutput{
-				Fragments: []*kvam.Fragment{
+				Fragments: []kvam_types.Fragment{
 					{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100005, 0))},
 					{FragmentNumber: aws.String("1234567000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0))},
 					{FragmentNumber: aws.String("1234569000"), ProducerTimestamp: aws.Time(time.Unix(100015, 0))},
@@ -39,7 +40,7 @@ func TestListFragmentsOutput(t *testing.T) {
 	t.Run("SortByFragmentNumber", func(t *testing.T) {
 		expected := &ListFragmentsOutput{
 			&kvam.ListFragmentsOutput{
-				Fragments: []*kvam.Fragment{
+				Fragments: []kvam_types.Fragment{
 					{FragmentNumber: aws.String("1234567000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0))},
 					{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100005, 0))},
 					{FragmentNumber: aws.String("1234569000"), ProducerTimestamp: aws.Time(time.Unix(100015, 0))},
@@ -65,7 +66,7 @@ func TestListFragmentsOutput(t *testing.T) {
 	t.Run("SortByProducerTimestamp", func(t *testing.T) {
 		expected := &ListFragmentsOutput{
 			&kvam.ListFragmentsOutput{
-				Fragments: []*kvam.Fragment{
+				Fragments: []kvam_types.Fragment{
 					{FragmentNumber: aws.String("1234567000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0))},
 					{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100005, 0))},
 					{FragmentNumber: aws.String("1234570000"), ProducerTimestamp: aws.Time(time.Unix(100010, 0))},
@@ -83,25 +84,25 @@ func TestListFragmentsOutput(t *testing.T) {
 	t.Run("Uniq", func(t *testing.T) {
 		data := &ListFragmentsOutput{
 			&kvam.ListFragmentsOutput{
-				Fragments: []*kvam.Fragment{
-					{FragmentNumber: aws.String("1234566000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
-					{FragmentNumber: aws.String("1234566100"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: aws.Int64(30)},
-					{FragmentNumber: aws.String("1234567000"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(90)},
-					{FragmentNumber: aws.String("1234567100"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
-					{FragmentNumber: aws.String("1234567200"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(80)},
-					{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100010, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
-					{FragmentNumber: aws.String("1234569000"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: aws.Int64(90)},
-					{FragmentNumber: aws.String("1234569100"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+				Fragments: []kvam_types.Fragment{
+					{FragmentNumber: aws.String("1234566000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: 100},
+					{FragmentNumber: aws.String("1234566100"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: 30},
+					{FragmentNumber: aws.String("1234567000"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: 90},
+					{FragmentNumber: aws.String("1234567100"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: 100},
+					{FragmentNumber: aws.String("1234567200"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: 80},
+					{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100010, 0)), FragmentLengthInMilliseconds: 100},
+					{FragmentNumber: aws.String("1234569000"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: 90},
+					{FragmentNumber: aws.String("1234569100"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: 100},
 				},
 			},
 		}
 		expected := &ListFragmentsOutput{
 			&kvam.ListFragmentsOutput{
-				Fragments: []*kvam.Fragment{
-					{FragmentNumber: aws.String("1234566000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
-					{FragmentNumber: aws.String("1234567100"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
-					{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100010, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
-					{FragmentNumber: aws.String("1234569100"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: aws.Int64(100)},
+				Fragments: []kvam_types.Fragment{
+					{FragmentNumber: aws.String("1234566000"), ProducerTimestamp: aws.Time(time.Unix(100000, 0)), FragmentLengthInMilliseconds: 100},
+					{FragmentNumber: aws.String("1234567100"), ProducerTimestamp: aws.Time(time.Unix(100005, 0)), FragmentLengthInMilliseconds: 100},
+					{FragmentNumber: aws.String("1234568000"), ProducerTimestamp: aws.Time(time.Unix(100010, 0)), FragmentLengthInMilliseconds: 100},
+					{FragmentNumber: aws.String("1234569100"), ProducerTimestamp: aws.Time(time.Unix(100015, 0)), FragmentLengthInMilliseconds: 100},
 				},
 			},
 		}
