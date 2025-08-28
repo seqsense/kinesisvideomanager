@@ -25,14 +25,19 @@ import (
 	"time"
 
 	"github.com/at-wat/ebml-go"
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	kvm "github.com/seqsense/kinesisvideomanager"
 )
 
 type KinesisVideoServer struct {
 	*httptest.Server
-	fragments map[uint64]FragmentTest
+	fragments map[string]FragmentTest
 	blockTime time.Duration
 	mu        sync.Mutex
+
+	producerTimestampOrigin float64
+	serverTimestampOrigin   float64
 
 	putMediaHook func(uint64, *FragmentTest, http.ResponseWriter) bool
 }
@@ -51,9 +56,16 @@ func WithPutMediaHook(h func(uint64, *FragmentTest, http.ResponseWriter) bool) K
 	}
 }
 
+func WithTimestampOrigin(producer, server float64) KinesisVideoServerOption {
+	return func(s *KinesisVideoServer) {
+		s.producerTimestampOrigin = producer
+		s.serverTimestampOrigin = server
+	}
+}
+
 func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer {
 	s := &KinesisVideoServer{
-		fragments: make(map[uint64]FragmentTest),
+		fragments: make(map[string]FragmentTest),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -62,17 +74,23 @@ func NewKinesisVideoServer(opts ...KinesisVideoServerOption) *KinesisVideoServer
 	mux.HandleFunc("/getDataEndpoint", s.getDataEndpoint)
 	mux.HandleFunc("/putMedia", s.putMedia)
 	mux.HandleFunc("/getMedia", s.getMedia)
+	mux.HandleFunc("/listFragments", s.listFragments)
+	mux.HandleFunc("/getMediaForFragmentList", s.getMediaForFragmentList)
 	s.Server = httptest.NewServer(mux)
 	return s
 }
 
+func FragmentNumberFromTimecode(tc uint64) string {
+	return fmt.Sprintf("%047d", tc)
+}
+
 func (s *KinesisVideoServer) GetFragment(timecode uint64) (FragmentTest, bool) {
-	fragment, ok := s.fragments[timecode]
+	fragment, ok := s.fragments[FragmentNumberFromTimecode(timecode)]
 	return fragment, ok
 }
 
 func (s *KinesisVideoServer) RegisterFragment(fragment FragmentTest) {
-	s.fragments[fragment.Cluster.Timecode] = fragment
+	s.fragments[FragmentNumberFromTimecode(fragment.Cluster.Timecode)] = fragment
 }
 
 func (s *KinesisVideoServer) getDataEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -116,12 +134,12 @@ func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.mu.Lock()
-	s.fragments[data.Segment.Cluster.Timecode] = fragment
+	s.fragments[FragmentNumberFromTimecode(data.Segment.Cluster.Timecode)] = fragment
 	s.mu.Unlock()
 
 	fmt.Fprintf(w,
 		`{"EventType":"PERSISTED", "FragmentTimecode":%d, "FragmentNumber":"%s"}`,
-		baseTimecode+data.Segment.Cluster.Timecode, "12345678901234567890123456789012345678901234567",
+		baseTimecode+data.Segment.Cluster.Timecode, FragmentNumberFromTimecode(data.Segment.Cluster.Timecode),
 	)
 }
 
@@ -161,6 +179,104 @@ func (s *KinesisVideoServer) getMedia(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
+func (s *KinesisVideoServer) listFragments(w http.ResponseWriter, r *http.Request) {
+	body := &listFragmentsInput{}
+	if err := json.NewDecoder(r.Body).Decode(body); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+
+	out := &listFragmentsOutput{
+		Fragments: []fragment{},
+	}
+	for _, f := range s.fragments {
+		if body.FragmentSelector != nil {
+			var ts float64
+			switch body.FragmentSelector.FragmentSelectorType {
+			case "PRODUCER_TIMESTAMP":
+				ts = float64(f.Cluster.Timecode)/1000 + s.producerTimestampOrigin
+			case "SERVER_TIMESTAMP":
+				ts = float64(f.Cluster.Timecode)/1000 + s.serverTimestampOrigin
+			default:
+				w.WriteHeader(500)
+				fmt.Fprintf(w, "invalid FragmentSelectorType")
+				return
+			}
+			tr := body.FragmentSelector.TimestampRange
+			if tr.StartTimestamp != nil && ts < *tr.StartTimestamp {
+				continue
+			}
+			if tr.EndTimestamp != nil && ts > *tr.EndTimestamp {
+				continue
+			}
+		}
+		out.Fragments = append(out.Fragments, fragment{
+			FragmentNumber:    aws.String(FragmentNumberFromTimecode(f.Cluster.Timecode)),
+			ProducerTimestamp: aws.Float64(float64(f.Cluster.Timecode / 1000)),
+			ServerTimestamp:   aws.Float64(float64(f.Cluster.Timecode / 1000)),
+		})
+	}
+
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+}
+
+func (s *KinesisVideoServer) getMediaForFragmentList(w http.ResponseWriter, r *http.Request) {
+	body := &getMediaForFragmentListInput{}
+	if err := json.NewDecoder(r.Body).Decode(body); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+
+	// Validate request
+	for _, id := range body.Fragments {
+		if _, ok := s.fragments[id]; !ok {
+			w.WriteHeader(400)
+			fmt.Fprintf(w, "unknown fragment number")
+			return
+		}
+	}
+
+	header := &struct {
+		Header  kvm.EBMLHeader `ebml:"EBML"`
+		Segment segment        `ebml:",size=unknown"`
+	}{}
+	if err := ebml.Marshal(header, w); err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "%v", err)
+		return
+	}
+
+	for _, id := range body.Fragments {
+		fragment := s.fragments[id]
+
+		data := &struct {
+			Cluster ClusterTest
+			Tags    TagsTest
+		}{
+			Cluster: fragment.Cluster,
+			Tags: TagsTest{
+				Tag: append(fragment.Tags.Tag, kvm.Tag{
+					SimpleTag: []kvm.SimpleTag{{
+						TagName:   kvm.TagNameFragmentNumber,
+						TagString: id,
+					}},
+				}),
+			},
+		}
+		if err := ebml.Marshal(data, w); err != nil {
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "%v", err)
+			return
+		}
+	}
+}
+
 type segment struct {
 	Info    kvm.Info
 	Tracks  kvm.Tracks
@@ -174,6 +290,12 @@ type FragmentTest struct {
 }
 
 type ClusterTest struct {
+	Timecode    uint64
+	Position    uint64 `ebml:",omitempty"`
+	SimpleBlock []ebml.Block
+}
+
+type ClusterTestChan struct {
 	Timecode    uint64
 	Position    uint64 `ebml:",omitempty"`
 	SimpleBlock []ebml.Block
