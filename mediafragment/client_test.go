@@ -124,13 +124,15 @@ func TestGetMediaForFragmentList(t *testing.T) {
 	}
 
 	var blocks []kvm.BlockWithBaseTimecode
-	if err := cli.GetMediaForFragmentList(ctx, NewFragmentIDs("2000", "3000"), func(f kvm.Fragment) {
-		for _, b := range f {
-			blocks = append(blocks, *b.BlockWithBaseTimecode)
-		}
-	}, func(err error) {
-		t.Error(err)
-	}); err != nil {
+	if err := cli.GetMediaForFragmentList(ctx,
+		NewFragmentIDs(kvsm.FragmentNumberFromTimecode(2000), kvsm.FragmentNumberFromTimecode(3000)),
+		func(f kvm.Fragment) {
+			for _, b := range f {
+				blocks = append(blocks, *b.BlockWithBaseTimecode)
+			}
+		}, func(err error) {
+			t.Error(err)
+		}); err != nil {
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
 			// HTTP response reader returns EOF to the successful read with data
 			// and ebml-go return unexpected EOF. Temporary ignore unexpected EOF error.
