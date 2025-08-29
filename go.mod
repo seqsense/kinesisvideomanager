@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.38.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.4
 	github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.31.0
+	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 )
 
