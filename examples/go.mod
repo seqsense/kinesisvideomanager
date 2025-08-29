@@ -4,6 +4,7 @@ go 1.22
 
 require (
 	github.com/at-wat/ebml-go v0.17.1
+	github.com/aws/aws-sdk-go v1.55.8
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/seqsense/kinesisvideomanager v0.0.0
 	github.com/seqsense/sq-gst-go v0.5.4
@@ -24,6 +25,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.37.0 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 )
 
 replace github.com/seqsense/kinesisvideomanager => ../
