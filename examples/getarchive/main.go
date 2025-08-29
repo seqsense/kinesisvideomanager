@@ -94,8 +94,8 @@ func main() {
 			}
 			tDiff := timecode - lastTimecode
 			lastTimecode = timecode
-			time.Sleep(time.Duration(tDiff) * time.Millisecond)
 			as.PushBuffer(b.Block.Data[0])
+			time.Sleep(time.Duration(tDiff) * time.Millisecond)
 		}
 	}, func(err error) {
 		log.Print(err)
