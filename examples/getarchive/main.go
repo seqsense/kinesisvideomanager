@@ -40,6 +40,7 @@ func main() {
 		streamName = os.Args[1]
 	}
 
+	// Context for initialization
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
@@ -85,7 +86,7 @@ func main() {
 	l.Start()
 
 	var lastTimecode int64
-	// Use context without deadline
+	// Use context without initialization deadline
 	if err := cli.GetMediaForFragmentList(context.Background(), list.FragmentIDs(), func(f kvm.Fragment) {
 		for _, b := range f {
 			timecode := b.AbsTimecode()
