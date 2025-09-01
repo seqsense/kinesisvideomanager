@@ -46,7 +46,7 @@ func (e *FragmentError) Error() string {
 }
 
 // New creates a KVS media fragment client.
-// Passed context is used only to get the KVS data endpint
+// Passed context is used only to get the KVS data endpoint
 // and does not control the future data read session.
 func New(ctx context.Context, streamID kvm.StreamID, cfg aws.Config) (*Client, error) {
 	kv := kinesisvideo.NewFromConfig(cfg)
