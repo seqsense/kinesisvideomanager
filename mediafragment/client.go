@@ -15,22 +15,24 @@
 package mediafragment
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/at-wat/ebml-go"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/service/kinesisvideo"
-	kvam "github.com/aws/aws-sdk-go/service/kinesisvideoarchivedmedia"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kinesisvideo"
+	kinesisvideo_types "github.com/aws/aws-sdk-go-v2/service/kinesisvideo/types"
+	kvam "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia"
+	kvam_types "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia/types"
 	kvm "github.com/seqsense/kinesisvideomanager"
 )
 
 type Client struct {
 	streamID                      kvm.StreamID
-	clientListFragments           *kvam.KinesisVideoArchivedMedia
-	clientGetMediaForFragmentList *kvam.KinesisVideoArchivedMedia
+	clientListFragments           *kvam.Client
+	clientGetMediaForFragmentList *kvam.Client
 }
 
 type FragmentError struct {
@@ -43,30 +45,37 @@ func (e *FragmentError) Error() string {
 	return fmt.Sprintf("fragmentNumber:%s code:%s message:%s", e.FragmentNumber, e.Code, e.Message)
 }
 
-func New(streamID kvm.StreamID, sess client.ConfigProvider, cfgs ...*aws.Config) (*Client, error) {
-	kv := kinesisvideo.New(sess, cfgs...)
+// New creates a KVS media fragment client.
+// Passed context is used only to get the KVS data endpoint
+// and does not control the future data read session.
+func New(ctx context.Context, streamID kvm.StreamID, cfg aws.Config) (*Client, error) {
+	kv := kinesisvideo.NewFromConfig(cfg)
 
-	ep, err := kv.GetDataEndpoint(
+	epListFragments, err := kv.GetDataEndpoint(ctx,
 		&kinesisvideo.GetDataEndpointInput{
-			APIName:    aws.String(kinesisvideo.APINameListFragments),
+			APIName:    kinesisvideo_types.APINameListFragments,
 			StreamName: streamID.StreamName(),
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
-	clientListFragments := kvam.New(sess, aws.NewConfig().WithEndpoint(*ep.DataEndpoint))
+	clientListFragments := kvam.NewFromConfig(cfg, func(o *kvam.Options) {
+		o.BaseEndpoint = epListFragments.DataEndpoint
+	})
 
-	ep, err = kv.GetDataEndpoint(
+	epGetMediaForFragmentList, err := kv.GetDataEndpoint(ctx,
 		&kinesisvideo.GetDataEndpointInput{
-			APIName:    aws.String(kinesisvideo.APINameGetMediaForFragmentList),
+			APIName:    kinesisvideo_types.APINameGetMediaForFragmentList,
 			StreamName: streamID.StreamName(),
 		},
 	)
 	if err != nil {
 		return nil, err
 	}
-	clientGetMediaForFragmentList := kvam.New(sess, aws.NewConfig().WithEndpoint(*ep.DataEndpoint))
+	clientGetMediaForFragmentList := kvam.NewFromConfig(cfg, func(o *kvam.Options) {
+		o.BaseEndpoint = epGetMediaForFragmentList.DataEndpoint
+	})
 
 	return &Client{
 		streamID:                      streamID,
@@ -75,7 +84,7 @@ func New(streamID kvm.StreamID, sess client.ConfigProvider, cfgs ...*aws.Config)
 	}, nil
 }
 
-func (c *Client) ListFragments(opts ...ListFragmentsOption) (*ListFragmentsOutput, error) {
+func (c *Client) ListFragments(ctx context.Context, opts ...ListFragmentsOption) (*ListFragmentsOutput, error) {
 	input := &kvam.ListFragmentsInput{
 		StreamName: c.streamID.StreamName(),
 	}
@@ -83,8 +92,8 @@ func (c *Client) ListFragments(opts ...ListFragmentsOption) (*ListFragmentsOutpu
 		o(input)
 	}
 
-	req, out := c.clientListFragments.ListFragmentsRequest(input)
-	if err := req.Send(); err != nil {
+	out, err := c.clientListFragments.ListFragments(ctx, input)
+	if err != nil {
 		return nil, err
 	}
 
@@ -98,12 +107,12 @@ func (c *Client) ListFragments(opts ...ListFragmentsOption) (*ListFragmentsOutpu
 	return &ret, nil
 }
 
-func (c *Client) GetMediaForFragmentList(fragments FragmentIDs, handler func(kvm.Fragment), errHandler func(error)) error {
-	req, out := c.clientGetMediaForFragmentList.GetMediaForFragmentListRequest(&kvam.GetMediaForFragmentListInput{
+func (c *Client) GetMediaForFragmentList(ctx context.Context, fragments FragmentIDs, handler func(kvm.Fragment), errHandler func(error)) error {
+	out, err := c.clientGetMediaForFragmentList.GetMediaForFragmentList(ctx, &kvam.GetMediaForFragmentListInput{
 		Fragments:  fragments,
 		StreamName: c.streamID.StreamName(),
 	})
-	if err := req.Send(); err != nil {
+	if err != nil {
 		return err
 	}
 
@@ -217,9 +226,9 @@ func WithNextToken(nextToken *string) ListFragmentsOption {
 
 func WithServerTimestampRange(startTime, endTime time.Time) ListFragmentsOption {
 	return func(input *kvam.ListFragmentsInput) {
-		input.FragmentSelector = &kvam.FragmentSelector{
-			FragmentSelectorType: aws.String(kvam.FragmentSelectorTypeServerTimestamp),
-			TimestampRange: &kvam.TimestampRange{
+		input.FragmentSelector = &kvam_types.FragmentSelector{
+			FragmentSelectorType: kvam_types.FragmentSelectorTypeServerTimestamp,
+			TimestampRange: &kvam_types.TimestampRange{
 				StartTimestamp: aws.Time(startTime),
 				EndTimestamp:   aws.Time(endTime),
 			},
@@ -229,9 +238,9 @@ func WithServerTimestampRange(startTime, endTime time.Time) ListFragmentsOption 
 
 func WithProducerTimestampRange(startTime, endTime time.Time) ListFragmentsOption {
 	return func(input *kvam.ListFragmentsInput) {
-		input.FragmentSelector = &kvam.FragmentSelector{
-			FragmentSelectorType: aws.String(kvam.FragmentSelectorTypeProducerTimestamp),
-			TimestampRange: &kvam.TimestampRange{
+		input.FragmentSelector = &kvam_types.FragmentSelector{
+			FragmentSelectorType: kvam_types.FragmentSelectorTypeProducerTimestamp,
+			TimestampRange: &kvam_types.TimestampRange{
 				StartTimestamp: aws.Time(startTime),
 				EndTimestamp:   aws.Time(endTime),
 			},

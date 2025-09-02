@@ -15,15 +15,15 @@
 package mediafragment
 
 import (
+	"context"
 	"errors"
 	"io"
 	"testing"
 	"time"
 
 	"github.com/at-wat/ebml-go"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/google/go-cmp/cmp"
 
 	kvm "github.com/seqsense/kinesisvideomanager"
@@ -35,19 +35,22 @@ func TestListFragments(t *testing.T) {
 	server := kvsm.NewKinesisVideoServer(kvsm.WithTimestampOrigin(0, serverTimestampOrigin))
 	defer server.Close()
 
-	cfg := &aws.Config{
-		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
-		Region:      aws.String("ap-northeast-1"),
-		Endpoint:    &server.URL,
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	cfg := aws.Config{
+		Credentials:  credentials.NewStaticCredentialsProvider("key", "secret", "token"),
+		Region:       "ap-northeast-1",
+		BaseEndpoint: &server.URL,
 	}
-	cli, err := New(kvm.StreamName("test-stream"), session.Must(session.NewSession(cfg)))
+	cli, err := New(ctx, kvm.StreamName("test-stream"), cfg)
 	if err != nil {
 		t.Fatalf("Failed to create new client: %v", err)
 	}
 
 	assertNumFragments := func(t *testing.T, num int, opt ListFragmentsOption) {
 		t.Helper()
-		list, err := cli.ListFragments(opt)
+		list, err := cli.ListFragments(ctx, opt)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -78,12 +81,15 @@ func TestGetMediaForFragmentList(t *testing.T) {
 	server := kvsm.NewKinesisVideoServer(kvsm.WithTimestampOrigin(0, serverTimestampOrigin))
 	defer server.Close()
 
-	cfg := &aws.Config{
-		Credentials: credentials.NewStaticCredentials("key", "secret", "token"),
-		Region:      aws.String("ap-northeast-1"),
-		Endpoint:    &server.URL,
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	cfg := aws.Config{
+		Credentials:  credentials.NewStaticCredentialsProvider("key", "secret", "token"),
+		Region:       "ap-northeast-1",
+		BaseEndpoint: &server.URL,
 	}
-	cli, err := New(kvm.StreamName("test-stream"), session.Must(session.NewSession(cfg)))
+	cli, err := New(ctx, kvm.StreamName("test-stream"), cfg)
 	if err != nil {
 		t.Fatalf("Failed to create new client: %v", err)
 	}
@@ -118,7 +124,7 @@ func TestGetMediaForFragmentList(t *testing.T) {
 	}
 
 	var blocks []kvm.BlockWithBaseTimecode
-	if err := cli.GetMediaForFragmentList(
+	if err := cli.GetMediaForFragmentList(ctx,
 		NewFragmentIDs(kvsm.FragmentNumberFromTimecode(2000), kvsm.FragmentNumberFromTimecode(3000)),
 		func(f kvm.Fragment) {
 			for _, b := range f {

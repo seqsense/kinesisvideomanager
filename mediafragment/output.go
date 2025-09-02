@@ -17,19 +17,20 @@ package mediafragment
 import (
 	"sort"
 
-	kvam "github.com/aws/aws-sdk-go/service/kinesisvideoarchivedmedia"
+	kvam "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia"
+	kvam_types "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia/types"
 )
 
 type ListFragmentsOutput struct {
 	*kvam.ListFragmentsOutput
 }
 
-type FragmentIDs []*string
+type FragmentIDs []string
 
 func NewFragmentIDs(ids ...string) FragmentIDs {
 	var ret FragmentIDs
 	for _, id := range ids {
-		ret = append(ret, &id)
+		ret = append(ret, id)
 	}
 	return ret
 }
@@ -76,7 +77,7 @@ func (l SortByProducerTimestamp) Less(i, j int) bool {
 func (l *ListFragmentsOutput) FragmentIDs() FragmentIDs {
 	var ret FragmentIDs
 	for _, f := range l.Fragments {
-		ret = append(ret, f.FragmentNumber)
+		ret = append(ret, *f.FragmentNumber)
 	}
 	return ret
 }
@@ -85,23 +86,23 @@ func (l *ListFragmentsOutput) FragmentIDs() FragmentIDs {
 // Fragments with same ProducerTimestamp excepting the longest one will be removed.
 // List of the fragments must be sorted by ProducerTimestamp before calling Uniq.
 func (l *ListFragmentsOutput) Uniq() {
-	uniqFragments := make([]*kvam.Fragment, 0, len(l.Fragments))
-	var longestFragment, prevFragment *kvam.Fragment
+	uniqFragments := make([]kvam_types.Fragment, 0, len(l.Fragments))
+	var longestFragment, prevFragment *kvam_types.Fragment
 	for i := 0; i < len(l.Fragments); i++ {
 		if prevFragment != nil && (*l.Fragments[i].ProducerTimestamp).Equal(*prevFragment.ProducerTimestamp) {
-			if longestFragment == nil || *longestFragment.FragmentLengthInMilliseconds < *l.Fragments[i].FragmentLengthInMilliseconds {
-				longestFragment = l.Fragments[i]
+			if longestFragment == nil || longestFragment.FragmentLengthInMilliseconds < l.Fragments[i].FragmentLengthInMilliseconds {
+				longestFragment = &l.Fragments[i]
 			}
 		} else {
 			if longestFragment != nil {
-				uniqFragments = append(uniqFragments, longestFragment)
+				uniqFragments = append(uniqFragments, *longestFragment)
 			}
-			longestFragment = l.Fragments[i]
+			longestFragment = &l.Fragments[i]
 		}
-		prevFragment = l.Fragments[i]
+		prevFragment = &l.Fragments[i]
 	}
 	if longestFragment != nil {
-		uniqFragments = append(uniqFragments, longestFragment)
+		uniqFragments = append(uniqFragments, *longestFragment)
 	}
 	l.Fragments = uniqFragments
 }
