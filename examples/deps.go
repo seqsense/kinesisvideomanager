@@ -7,7 +7,6 @@ package examples
 // https://github.com/renovatebot/renovate/issues/12999
 
 import (
-	_ "github.com/at-wat/ebml-go"
 	_ "github.com/aws/aws-sdk-go-v2"
 	_ "github.com/aws/aws-sdk-go-v2/credentials"
 	_ "github.com/aws/aws-sdk-go-v2/service/kinesisvideo"
