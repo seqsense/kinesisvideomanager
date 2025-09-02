@@ -1,5 +1,7 @@
 package examples
 
+// **This file is not needed if you import kinesisvideomanager normally**
+
 // Directly specify the indirect dependencies from ../
 // to workaround the problem that go mod tidy is not executed by Renovate.
 // https://github.com/renovatebot/renovate/issues/12999
