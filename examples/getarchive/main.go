@@ -15,11 +15,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
 
 	kvm "github.com/seqsense/kinesisvideomanager"
 	"github.com/seqsense/kinesisvideomanager/mediafragment"
@@ -39,13 +40,20 @@ func main() {
 		streamName = os.Args[1]
 	}
 
-	sess := session.Must(session.NewSession())
-	cli, err := mediafragment.New(kvm.StreamName(streamName), sess)
+	// Context for initialization
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cli, err := mediafragment.New(ctx, kvm.StreamName(streamName), cfg)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	list, err := cli.ListFragments(mediafragment.WithServerTimestampRange(time.Now().Add(-time.Hour), time.Now()))
+	list, err := cli.ListFragments(ctx, mediafragment.WithServerTimestampRange(time.Now().Add(-time.Hour), time.Now()))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -56,7 +64,9 @@ func main() {
 		log.Fatal("No fragments are found in the last 1 hour. Run putmedia example first to store some fragments.")
 	}
 
-	log.Printf("fragments: %v", list)
+	for _, frag := range list.Fragments {
+		log.Printf("fragment: %+v", frag)
+	}
 
 	l, err := gstlaunch.New(
 		"appsrc name=src format=GST_FORMAT_TIME is-live=true do-timestamp=true" +
@@ -76,7 +86,8 @@ func main() {
 	l.Start()
 
 	var lastTimecode int64
-	if err := cli.GetMediaForFragmentList(list.FragmentIDs(), func(f kvm.Fragment) {
+	// Use context without initialization deadline
+	if err := cli.GetMediaForFragmentList(context.Background(), list.FragmentIDs(), func(f kvm.Fragment) {
 		for _, b := range f {
 			timecode := b.AbsTimecode()
 			if lastTimecode == 0 || timecode < lastTimecode {
