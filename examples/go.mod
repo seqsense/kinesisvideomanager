@@ -3,7 +3,7 @@ module github.com/seqsense/kinesisvideomanager/examples
 go 1.22
 
 require (
-	github.com/at-wat/ebml-go v0.17.1
+	github.com/at-wat/ebml-go v0.17.2
 	github.com/aws/aws-sdk-go-v2 v1.38.3
 	github.com/aws/aws-sdk-go-v2/config v1.31.6
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.10
