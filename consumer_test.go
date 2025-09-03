@@ -26,8 +26,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
-	kvm "github.com/seqsense/kinesisvideomanager"
-	kvsm "github.com/seqsense/kinesisvideomanager/kvsmockserver"
+	kvm "github.com/seqsense/kinesisvideomanager/v2"
+	kvsm "github.com/seqsense/kinesisvideomanager/v2/kvsmockserver"
 )
 
 func TestConsumer(t *testing.T) {

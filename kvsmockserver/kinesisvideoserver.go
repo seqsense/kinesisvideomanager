@@ -27,7 +27,7 @@ import (
 	"github.com/at-wat/ebml-go"
 	"github.com/aws/aws-sdk-go-v2/aws"
 
-	kvm "github.com/seqsense/kinesisvideomanager"
+	kvm "github.com/seqsense/kinesisvideomanager/v2"
 )
 
 type KinesisVideoServer struct {

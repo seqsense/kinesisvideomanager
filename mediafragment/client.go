@@ -26,7 +26,8 @@ import (
 	kinesisvideo_types "github.com/aws/aws-sdk-go-v2/service/kinesisvideo/types"
 	kvam "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia"
 	kvam_types "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia/types"
-	kvm "github.com/seqsense/kinesisvideomanager"
+
+	kvm "github.com/seqsense/kinesisvideomanager/v2"
 )
 
 type Client struct {

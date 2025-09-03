@@ -22,8 +22,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 
-	kvm "github.com/seqsense/kinesisvideomanager"
-	"github.com/seqsense/kinesisvideomanager/mediafragment"
+	kvm "github.com/seqsense/kinesisvideomanager/v2"
+	"github.com/seqsense/kinesisvideomanager/v2/mediafragment"
 	"github.com/seqsense/sq-gst-go/appsrc"
 	"github.com/seqsense/sq-gst-go/gstlaunch"
 )

@@ -26,8 +26,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/google/go-cmp/cmp"
 
-	kvm "github.com/seqsense/kinesisvideomanager"
-	kvsm "github.com/seqsense/kinesisvideomanager/kvsmockserver"
+	kvm "github.com/seqsense/kinesisvideomanager/v2"
+	kvsm "github.com/seqsense/kinesisvideomanager/v2/kvsmockserver"
 )
 
 func TestListFragments(t *testing.T) {

@@ -1,4 +1,4 @@
-module github.com/seqsense/kinesisvideomanager
+module github.com/seqsense/kinesisvideomanager/v2
 
 go 1.22
 
