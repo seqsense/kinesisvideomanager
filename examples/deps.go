@@ -10,5 +10,6 @@ import (
 	_ "github.com/aws/aws-sdk-go-v2"
 	_ "github.com/aws/aws-sdk-go-v2/credentials"
 	_ "github.com/aws/aws-sdk-go-v2/service/kinesisvideo"
+	_ "github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia"
 	_ "github.com/google/uuid"
 )
