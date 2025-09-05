@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 
 	"github.com/at-wat/ebml-go"
-	kvm "github.com/seqsense/kinesisvideomanager"
+	kvm "github.com/seqsense/kinesisvideomanager/v2"
 	"github.com/seqsense/sq-gst-go/appsink"
 	"github.com/seqsense/sq-gst-go/gstlaunch"
 )

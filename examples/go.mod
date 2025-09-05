@@ -1,4 +1,4 @@
-module github.com/seqsense/kinesisvideomanager/examples
+module github.com/seqsense/kinesisvideomanager/v2/examples
 
 go 1.22
 
@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.31.2
 	github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.32.2
 	github.com/google/uuid v1.6.0
-	github.com/seqsense/kinesisvideomanager v0.0.0
+	github.com/seqsense/kinesisvideomanager/v2 v2.0.0-00010101000000-000000000000
 	github.com/seqsense/sq-gst-go v0.5.4
 )
 
@@ -27,4 +27,4 @@ require (
 	github.com/aws/smithy-go v1.23.0 // indirect
 )
 
-replace github.com/seqsense/kinesisvideomanager => ../
+replace github.com/seqsense/kinesisvideomanager/v2 => ../
