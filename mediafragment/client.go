@@ -136,6 +136,9 @@ func (c *Client) GetMediaForFragmentList(ctx context.Context, fragments Fragment
 		for {
 			select {
 			case tag := <-chTag:
+				if len(tag.SimpleTag) == 0 {
+					break
+				}
 				switch tag.SimpleTag[0].TagName {
 				case kvm.TagNameFragmentNumber:
 					// start new fragment
