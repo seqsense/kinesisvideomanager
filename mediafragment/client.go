@@ -126,6 +126,9 @@ func (c *Client) GetMediaForFragmentList(fragments FragmentIDs, handler func(kvm
 		for {
 			select {
 			case tag := <-chTag:
+				if len(tag.SimpleTag) == 0 {
+					break
+				}
 				switch tag.SimpleTag[0].TagName {
 				case kvm.TagNameFragmentNumber:
 					// start new fragment
