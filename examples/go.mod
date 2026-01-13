@@ -10,7 +10,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.33.4
 	github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.33.9
 	github.com/google/uuid v1.6.0
-	github.com/seqsense/kinesisvideomanager/v2 v2.0.0-rc.1
+	github.com/seqsense/kinesisvideomanager/v2 v2.0.0
 	github.com/seqsense/sq-gst-go v0.5.4
 )
 
