@@ -20,8 +20,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.23 h1:pbrxO/ku
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.23/go.mod h1:/CMNUqoj46HpS3MNRDEDIwcgEnrtZlKRaHNaHxIFpNA=
 github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.33.10 h1:Z3xoYyzvZa3YmIzTdUctjgEEvuE6NMcJqEKHAZkJxns=
 github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.33.10/go.mod h1:EgB0GBJpnq1xEuoeXnpRixPx2kwaWWMkl5JKMXx43f0=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.33.15 h1:rBZxScvCsqp/tvgmPoyH2aGD19V2A/vzq28C9kooVeE=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.33.15/go.mod h1:eZxd8hMyN0Vylh0lEr7XdZOhTBmqOIq1kXD9U34BDDE=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.34.0 h1:U3y+Ktq8zyC3VXanW0pz6i3p2VNZRas9rlKvfGosuQg=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.34.0/go.mod h1:eZxd8hMyN0Vylh0lEr7XdZOhTBmqOIq1kXD9U34BDDE=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.11 h1:TdJ+HdzOBhU8+iVAOGUTU63VXopcumCOF1paFulHWZc=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.11/go.mod h1:R82ZRExE/nheo0N+T8zHPcLRTcH8MGsnR3BiVGX0TwI=
 github.com/aws/aws-sdk-go-v2/service/sso v1.30.17 h1:7byT8HUWrgoRp6sXjxtZwgOKfhss5fW6SkLBtqzgRoE=
