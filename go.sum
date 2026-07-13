@@ -8,10 +8,10 @@ github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.30 h1:xM/Is9cKMHa8Jj8zk
 github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.30/go.mod h1:WueJeNDZvK1fMYEWJIkcivBfEzUkTpBhzlrUKKY8EuA=
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.30 h1:jn46zC9LdsVR/ZpMIJqMqb8hHv31BlLx3ulVqNspUOk=
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.30/go.mod h1:1hTMsAgbdS/AtUi4bw8+gUuh1pceo+eXRLfpSuSQj3M=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.34.7 h1:4W+iKAjShjRVV4FLGJ3REvgKGScxnOQ2jIiX0cbycAs=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.34.7/go.mod h1:wTOWu6WzRzNZ9F7J7o8oCcCyalUT9A5/T9b5uYMbaqM=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.34.9 h1:wSlFCM4e9NC8fvHUlF4279xTFW4qD8JU9y9/jIkDFrY=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.34.9/go.mod h1:U/93URTDA7vB8jGplYgtDwd2HTTO19eC6abdLLEbWBY=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.35.0 h1:472onHEabjU1wa+8LGX6zTtsrAFrLLnn4rwewghGSAs=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.35.0/go.mod h1:wTOWu6WzRzNZ9F7J7o8oCcCyalUT9A5/T9b5uYMbaqM=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.35.0 h1:WIaIWLhlPqFyXwDNFwWdCTMvpA0dzjAuEoThEjLDleI=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.35.0/go.mod h1:U/93URTDA7vB8jGplYgtDwd2HTTO19eC6abdLLEbWBY=
 github.com/aws/smithy-go v1.27.3 h1:F3Zb497UhhskkfpJmfkXswyo+t0sh9OTBnIHjogWbVY=
 github.com/aws/smithy-go v1.27.3/go.mod h1:YE2RhdIuDbA5E5bTdciG9KrW3+TiEONeUWCqxX9i1Fc=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
