@@ -63,6 +63,9 @@ func New(ctx context.Context, streamID kvm.StreamID, cfg aws.Config) (*Client, e
 	}
 	clientListFragments := kvam.NewFromConfig(cfg, func(o *kvam.Options) {
 		o.BaseEndpoint = epListFragments.DataEndpoint
+		// BaseEndpoint is already resolved based on AWS_USE_DUALSTACK_ENDPOINT.
+		// Need to disable dualstack flag to avoid endpoint resolve rule error.
+		o.EndpointOptions.UseDualStackEndpoint = aws.DualStackEndpointStateDisabled
 	})
 
 	epGetMediaForFragmentList, err := kv.GetDataEndpoint(ctx,
@@ -76,6 +79,9 @@ func New(ctx context.Context, streamID kvm.StreamID, cfg aws.Config) (*Client, e
 	}
 	clientGetMediaForFragmentList := kvam.NewFromConfig(cfg, func(o *kvam.Options) {
 		o.BaseEndpoint = epGetMediaForFragmentList.DataEndpoint
+		// BaseEndpoint is already resolved based on AWS_USE_DUALSTACK_ENDPOINT.
+		// Need to disable dualstack flag to avoid endpoint resolve rule error.
+		o.EndpointOptions.UseDualStackEndpoint = aws.DualStackEndpointStateDisabled
 	})
 
 	return &Client{
