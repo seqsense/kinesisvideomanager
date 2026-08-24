@@ -84,3 +84,10 @@ type SegmentWrite struct {
 	Cluster ClusterWrite `ebml:",size=unknown"`
 	Tags    Tags
 }
+type SegmentHead struct {
+	Info   Info
+	Tracks Tracks
+}
+type ClusterHead struct {
+	Timecode uint64
+}

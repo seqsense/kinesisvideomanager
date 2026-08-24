@@ -15,17 +15,14 @@
 package kinesisvideomanager
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"math"
 	"net/http"
 	"regexp"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -212,7 +209,7 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 		connectionTimeout:      15 * time.Second,
 		onError:                func(err error) { options.logger.Error(err) },
 		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout: 0,
 		},
 		lenBlockBuffer:    10,
 		lenResponseBuffer: 10,
@@ -221,142 +218,131 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	for _, o := range opts {
 		o(options)
 	}
-
-	var muConn sync.Mutex
-	var conn, nextConn *connection
-	var lastAbsTime uint64
-	chConnection := make(chan *connection)
-	cleanConnections := func() {
-		if conn != nil {
-			conn.close()
-			conn = nil
+	segmentUuid := options.segmentUID
+	if segmentUuid == nil {
+		var err error
+		segmentUuid, err = generateRandomUUID()
+		if err != nil {
+			return nil, err
 		}
-		if nextConn != nil {
-			nextConn.close()
-			nextConn = nil
-		}
-		lastAbsTime = 0
 	}
-	var timeout *time.Timer
-	resetTimeout := func() {
-		timeout = time.AfterFunc(options.connectionTimeout, func() {
-			muConn.Lock()
-			defer muConn.Unlock()
 
-			options.logger.Debugf(`Receiving block timed out, clean connections: { StreamID: "%s" }`, p.streamID)
-			cleanConnections()
-		})
-	}
-	resetTimeout()
-
-	chResp := make(chan *FragmentEvent, options.lenResponseBuffer)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	allDone := make(chan struct{})
+	r, w := io.Pipe()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, r)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("creating http request: %w", err)
+	}
+	if p.streamID.StreamName() != nil {
+		req.Header.Set("x-amzn-stream-name", *p.streamID.StreamName())
+	}
+	if p.streamID.StreamARN() != nil {
+		req.Header.Set("x-amzn-stream-arn", *p.streamID.StreamARN())
+	}
+	req.Header.Set("x-amzn-fragment-timecode-type", string(options.fragmentTimecodeType))
+	req.Header.Set("x-amzn-producer-start-timestamp", options.producerStartTimestamp)
+
+	if err := p.cli.sign(ctx, req, nil); err != nil {
+		cancel()
+		return nil, fmt.Errorf("presigning http request: %w", err)
+	}
+	res, err := options.httpClient.Do(req)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("sending http request: %w", err)
+	}
+
+	header := struct {
+		Header  EBMLHeader  `ebml:"EBML"`
+		Segment SegmentHead `ebml:",size=unknown"`
+	}{
+		Header: EBMLHeader{
+			EBMLVersion:            1,
+			EBMLReadVersion:        1,
+			EBMLMaxIDLength:        4,
+			EBMLMaxSizeLength:      8,
+			EBMLDocType:            "matroska",
+			EBMLDocTypeVersion:     2,
+			EBMLDocTypeReadVersion: 2,
+		},
+		Segment: SegmentHead{
+			Info: Info{
+				SegmentUID:    segmentUuid,
+				TimecodeScale: TimecodeScale,
+				Title:         options.title,
+				MuxingApp:     "kinesisvideomanager.Provider",
+				WritingApp:    "kinesisvideomanager.Provider",
+			},
+			Tracks: Tracks{
+				TrackEntry: p.tracks,
+			},
+		},
+	}
+	if err := ebml.Marshal(&header, w); err != nil {
+		cancel()
+		return nil, err
+	}
+
+	if res.StatusCode != 200 {
+		body, err := ioutil.ReadAll(res.Body)
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("reading http response: %w", err)
+		}
+		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
+	}
+
+	chResp := make(chan *FragmentEvent, options.lenResponseBuffer)
+	chFE := make(chan *FragmentEvent)
 	go func() {
-		p.putSegments(ctx, chConnection, chResp, options)
-		close(allDone)
+		for fe := range chFE {
+			switch fe.EventType {
+			case FRAGMENT_EVENT_ERROR:
+				cancel()
+			case FRAGMENT_EVENT_PERSISTED:
+			}
+			chResp <- fe
+		}
+		close(chResp)
+	}()
+	go func() {
+		if err := parseFragmentEvent(
+			res.Body, chFE,
+		); err != nil && err != context.Canceled {
+			println("parseFragmentEvent", err.Error())
+		}
 	}()
 
-	closed := make(chan struct{})
-	var closedOnce sync.Once
-
-	shutdown := func(ctx context.Context) error {
-		closedOnce.Do(func() {
-			close(closed)
-		})
-
-		muConn.Lock()
-		timeout.Stop()
-		cleanConnections()
-		if chConnection != nil {
-			close(chConnection)
-			chConnection = nil
-		}
-		muConn.Unlock()
-
-		select {
-		case <-allDone:
-			cancel()
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-		return nil
-	}
-	prepareNextConn := func() {
-		if options.onNewConn != nil {
-			options.onNewConn()
-		}
-		nextConn = newConnection(options)
-		select {
-		case chConnection <- nextConn:
-		case <-closed:
-		}
-	}
-	switchToNextConn := func(startTime uint64) {
-		if options.onSwitchConn != nil {
-			options.onSwitchConn(startTime)
-		}
-		if conn != nil {
-			conn.close()
-		}
-		timeout.Stop()
-		conn = nextConn
-		conn.initialize(startTime, options)
-		resetTimeout()
-		nextConn = nil
-	}
+	const invalidTimecode = uint64(0xFFFFFFFFFFFFFFFF)
+	var clusterTimecode uint64 = invalidTimecode
 
 	writer := &blockWriter{
 		fnWrite: func(bt *BlockWithBaseTimecode) error {
-			var forceSwitchConn bool
 			absTime := uint64(bt.AbsTimecode())
-			if lastAbsTime != 0 {
-				diff := int64(absTime - lastAbsTime)
-				if diff < 0 {
-					return fmt.Errorf(`stream_id=%s, timecode=%d, last=%d, diff=%d: %w`,
-						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
-						ErrInvalidTimecode,
-					)
+			if clusterTimecode == invalidTimecode || absTime > clusterTimecode+9000 {
+				clusterTimecode = absTime
+				cluster := struct {
+					Cluster ClusterHead `ebml:",size=unknown"`
+				}{
+					Cluster: ClusterHead{
+						Timecode: clusterTimecode,
+					},
 				}
-				if diff > math.MaxInt16 {
-					options.logger.Debugf(`Forcing next connection: { StreamID: "%s", AbsTime: %d, LastAbsTime: %d, Diff: %d }`,
-						p.streamID, bt.AbsTimecode(), lastAbsTime, diff,
-					)
-					if nextConn == nil {
-						prepareNextConn()
-					}
-					forceSwitchConn = true
+				if err := ebml.Marshal(&cluster, w); err != nil {
+					return err
 				}
 			}
-
-			muConn.Lock()
-			defer muConn.Unlock()
-
-			if forceSwitchConn {
-				switchToNextConn(absTime)
+			bt.Block.Timecode = int16(absTime - clusterTimecode)
+			block := struct {
+				SimpleBlock *ebml.Block
+			}{
+				SimpleBlock: &bt.Block,
 			}
-
-			if conn == nil || (nextConn == nil && int16(absTime-conn.baseTimecode) > 8000) {
-				options.logger.Debugf(`Prepare next connection: { StreamID: "%s" }`, p.streamID)
-				prepareNextConn()
-			}
-			if conn == nil || int16(absTime-conn.baseTimecode) > 9000 {
-				options.logger.Debugf(`Switch to next connection: { StreamID: "%s", AbsTime: %d }`, p.streamID, absTime)
-				switchToNextConn(absTime)
-			}
-			bt.Block.Timecode = int16(absTime - conn.baseTimecode)
-			select {
-			case conn.Block <- bt.Block:
-				conn.countBlock()
-				lastAbsTime = absTime
-			case <-timeout.C:
-				cleanConnections()
-				return fmt.Errorf(`stream_id=%s, timecode=%d: %w`,
-					p.streamID, bt.AbsTimecode(),
-					ErrWriteTimeout,
-				)
-			case <-closed:
+			if err := ebml.Marshal(&block, w); err != nil {
+				return err
 			}
 			return nil
 		},
@@ -368,265 +354,17 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 			return resp, nil
 		},
 		fnShutdown: func(ctx context.Context) error {
-			return shutdown(ctx)
+			cancel()
+			return nil
 		},
 		fnClose: func() error {
+			_ = res.Body.Close()
 			cancel()
-			return shutdown(context.Background())
+			return nil
 		},
 	}
 
 	return writer, nil
-}
-
-// putSegments encodes fragments and puts to the server.
-// chResp will be closed by putSegments.
-func (p *Provider) putSegments(ctx context.Context, ch chan *connection, chResp chan *FragmentEvent, opts *PutMediaOptions) {
-	var wg sync.WaitGroup
-	defer func() {
-		wg.Wait()
-		close(chResp)
-	}()
-
-	for conn := range ch {
-		conn := conn
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			err := p.putMedia(ctx, conn, chResp, opts)
-			if err != nil {
-				opts.onError(err)
-				return
-			}
-		}()
-	}
-}
-
-// putMedia encodes a fragment as mkv and puts to the server.
-// chResp must be closed by the caller after putMedia returned.
-func (p *Provider) putMedia(ctx context.Context, conn *connection, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
-	segmentUuid := opts.segmentUID
-	if segmentUuid == nil {
-		var err error
-		segmentUuid, err = generateRandomUUID()
-		if err != nil {
-			return err
-		}
-	}
-
-	data := struct {
-		Header  EBMLHeader   `ebml:"EBML"`
-		Segment SegmentWrite `ebml:",size=unknown"`
-	}{
-		Header: EBMLHeader{
-			EBMLVersion:            1,
-			EBMLReadVersion:        1,
-			EBMLMaxIDLength:        4,
-			EBMLMaxSizeLength:      8,
-			EBMLDocType:            "matroska",
-			EBMLDocTypeVersion:     2,
-			EBMLDocTypeReadVersion: 2,
-		},
-		Segment: SegmentWrite{
-			Info: Info{
-				SegmentUID:    segmentUuid,
-				TimecodeScale: TimecodeScale,
-				Title:         opts.title,
-				MuxingApp:     "kinesisvideomanager.Provider",
-				WritingApp:    "kinesisvideomanager.Provider",
-			},
-			Tracks: Tracks{
-				TrackEntry: p.tracks,
-			},
-			Cluster: ClusterWrite{
-				Timecode:    conn.BlockChWithBaseTimecode.Timecode,
-				SimpleBlock: conn.BlockChWithBaseTimecode.Block,
-			},
-			Tags: Tags{
-				Tag: conn.BlockChWithBaseTimecode.Tag,
-			},
-		},
-	}
-
-	r, wOutRaw := io.Pipe()
-	wOutBuf := bufio.NewWriter(wOutRaw)
-	writeErr := func() error { return nil }
-	var w io.Writer
-	var backup *bytes.Buffer
-
-	if opts.retryCount > 0 {
-		// Ignore error when http request body is closed.
-		// Continue marshalling whole fragment and retry sending later.
-		noErrWriter := &ignoreErrWriter{Writer: wOutBuf}
-		writeErr = noErrWriter.Err
-
-		// Take copy of the fragment.
-		backup = p.bufferPool.Get().(*bytes.Buffer)
-		defer p.bufferPool.Put(backup)
-		backup.Reset()
-		w = io.MultiWriter(backup, noErrWriter)
-	} else {
-		w = io.Writer(wOutBuf)
-	}
-
-	var errFlush, errMarshal error
-	chMarshalDone := make(chan struct{})
-	go func() {
-		defer func() {
-			close(chMarshalDone)
-			wOutRaw.CloseWithError(io.EOF)
-		}()
-		if err := ebml.Marshal(&data, w); err != nil {
-			errMarshal = fmt.Errorf("ebml marshalling: %w", err)
-			return
-		}
-		if err := wOutBuf.Flush(); err != nil {
-			errFlush = fmt.Errorf("flushing buffer: %w", err)
-		}
-	}()
-
-	var wgResp sync.WaitGroup
-	defer wgResp.Wait()
-
-	handleResp := func() chan *FragmentEvent {
-		chRespRaw := make(chan *FragmentEvent)
-		wgResp.Add(1)
-		go func() {
-			defer wgResp.Done()
-			for fe := range chRespRaw {
-				if fe.ErrorId == INVALID_MKV_DATA && conn.numBlock() == 0 {
-					// Ignore INVALID_MKV_DATA due to zero Block segment.
-					continue
-				}
-				chResp <- fe
-			}
-		}()
-		return chRespRaw
-	}
-
-	errPutMedia := p.putMediaRaw(ctx, r, handleResp(), opts)
-	_ = r.Close()
-
-	<-chMarshalDone
-	if errMarshal != nil {
-		// Marshal error is not recoverable.
-		return errMarshal
-	}
-	if conn.numBlock() == 0 {
-		// No Block is written and INVALID_MKV_DATA is returned.
-		return nil
-	}
-
-	err := newMultiError(errPutMedia, errFlush, writeErr())
-	if err != nil && opts.retryCount > 0 {
-		opts.logger.Debug("Retrying PutMedia")
-		interval := opts.retryIntervalBase
-	L_RETRY:
-		for i := 0; i < opts.retryCount; i++ {
-			select {
-			case <-time.After(interval):
-			case <-ctx.Done():
-				break L_RETRY
-			}
-
-			opts.logger.Infof(
-				`Retrying PutMedia: { StreamID: "%s", RetryCount: %d, Err: %s }`,
-				p.streamID, i,
-				string(regexAmzCredHeader.ReplaceAll([]byte(strconv.Quote(err.Error())), []byte("X-Amz-$1=***"))),
-			)
-			if err = p.putMediaRaw(ctx, bytes.NewReader(backup.Bytes()), handleResp(), opts); err == nil {
-				break
-			}
-			if fe, ok := err.(*FragmentEventError); ok && opts.fragmentHeadDumpLen > 0 {
-				bb := backup.Bytes()
-				if len(bb) > opts.fragmentHeadDumpLen {
-					fe.fragmentHead = bb[:opts.fragmentHeadDumpLen]
-				} else {
-					fe.fragmentHead = bb
-				}
-			}
-			interval *= 2
-		}
-	}
-	return err
-}
-
-// putMediaRaw puts a fragment to the server.
-// chResp will be closed by putMediaRaw.
-func (p *Provider) putMediaRaw(ctx context.Context, r io.Reader, chResp chan *FragmentEvent, opts *PutMediaOptions) error {
-	ctx2, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	var closeRespOnce sync.Once
-	defer func() {
-		closeRespOnce.Do(func() {
-			// Close chResp on error
-			close(chResp)
-		})
-	}()
-
-	req, err := http.NewRequestWithContext(ctx2, "POST", p.endpoint, r)
-	if err != nil {
-		return fmt.Errorf("creating http request: %w", err)
-	}
-	if p.streamID.StreamName() != nil {
-		req.Header.Set("x-amzn-stream-name", *p.streamID.StreamName())
-	}
-	if p.streamID.StreamARN() != nil {
-		req.Header.Set("x-amzn-stream-arn", *p.streamID.StreamARN())
-	}
-	req.Header.Set("x-amzn-fragment-timecode-type", string(opts.fragmentTimecodeType))
-	req.Header.Set("x-amzn-producer-start-timestamp", opts.producerStartTimestamp)
-
-	if err := p.cli.sign(ctx, req, nil); err != nil {
-		return fmt.Errorf("presigning http request: %w", err)
-	}
-	res, err := opts.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("sending http request: %w", err)
-	}
-
-	defer func() {
-		_ = res.Body.Close()
-	}()
-
-	if res.StatusCode != 200 {
-		body, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			return fmt.Errorf("reading http response: %w", err)
-		}
-		return fmt.Errorf("%d: %s", res.StatusCode, string(body))
-	}
-
-	closeRespOnce.Do(func() {
-		// chResp will be closed in fragment event receive goroutine
-	})
-
-	chFE := make(chan *FragmentEvent)
-	chErr := make(chan error, 1)
-	go func() {
-		for fe := range chFE {
-			switch fe.EventType {
-			case FRAGMENT_EVENT_ERROR:
-				chErr <- fe.AsError()
-				cancel()
-			case FRAGMENT_EVENT_PERSISTED:
-				cancel()
-			}
-			chResp <- fe
-		}
-		close(chErr)
-		close(chResp)
-	}()
-	if err := parseFragmentEvent(
-		res.Body, chFE,
-	); err != nil && err != context.Canceled {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	return <-chErr
 }
 
 func generateRandomUUID() ([]byte, error) {

@@ -101,5 +101,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("container: %v", data)
+	log.Printf("container: %#v", data)
 }
