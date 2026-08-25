@@ -15,10 +15,7 @@
 package kinesisvideomanager
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"io"
 )
 
 // ErrorID represents ErrorId enum of PutMedia API.
@@ -69,8 +66,6 @@ type FragmentEvent struct {
 	FragmentNumber   string // 158-bit number, handle as string
 	ErrorId          ErrorID
 	ErrorCode        string
-
-	fragmentHead []byte
 }
 
 func (e *FragmentEvent) IsError() bool {
@@ -84,38 +79,12 @@ func (e *FragmentEvent) AsError() error {
 	return &FragmentEventError{FragmentEvent: *e}
 }
 
-func (e *FragmentEvent) Dump() []byte {
-	return e.fragmentHead
-}
-
 type FragmentEventError struct {
 	FragmentEvent
 }
 
 func (e FragmentEventError) Error() string {
-	var dump string
-	if len(e.fragmentHead) > 0 {
-		dump = `, Data: "` + base64.RawStdEncoding.EncodeToString(e.fragmentHead) + `"`
-	}
-	return fmt.Sprintf(`fragment event error: { Timecode: %d, FragmentNumber: %s, ErrorId: %d, ErrorCode: "%s"%s }`,
-		e.FragmentTimecode, e.FragmentNumber, e.ErrorId, e.ErrorCode, dump,
+	return fmt.Sprintf(`fragment event error: { Timecode: %d, FragmentNumber: %s, ErrorId: %d, ErrorCode: "%s" }`,
+		e.FragmentTimecode, e.FragmentNumber, e.ErrorId, e.ErrorCode,
 	)
-}
-
-func parseFragmentEvent(r io.Reader, ch chan *FragmentEvent) error {
-	defer func() {
-		close(ch)
-	}()
-	dec := json.NewDecoder(r)
-	for {
-		var fe FragmentEvent
-		if err := dec.Decode(&fe); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-		ch <- &fe
-	}
-	return nil
 }

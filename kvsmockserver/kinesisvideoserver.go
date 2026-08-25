@@ -16,9 +16,10 @@ package kvsmockserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -39,7 +40,7 @@ type KinesisVideoServer struct {
 	producerTimestampOrigin float64
 	serverTimestampOrigin   float64
 
-	putMediaHook func(uint64, *FragmentTest, http.ResponseWriter) bool
+	putMediaHook func(uint64, *FragmentTest, io.Writer) bool
 }
 
 type KinesisVideoServerOption func(*KinesisVideoServer)
@@ -50,7 +51,7 @@ func WithBlockTime(blockTime time.Duration) KinesisVideoServerOption {
 	}
 }
 
-func WithPutMediaHook(h func(uint64, *FragmentTest, http.ResponseWriter) bool) KinesisVideoServerOption {
+func WithPutMediaHook(h func(uint64, *FragmentTest, io.Writer) bool) KinesisVideoServerOption {
 	return func(s *KinesisVideoServer) {
 		s.putMediaHook = h
 	}
@@ -98,11 +99,6 @@ func (s *KinesisVideoServer) getDataEndpoint(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
-	data := &struct {
-		Header  kvm.EBMLHeader `ebml:"EBML"`
-		Segment segment        `ebml:",size=unknown"`
-	}{}
-
 	timecodeType := kvm.FragmentTimecodeType(r.Header.Get("x-amzn-fragment-timecode-type"))
 	baseTimecode := uint64(0)
 	if timecodeType == kvm.FragmentTimecodeTypeRelative {
@@ -116,35 +112,96 @@ func (s *KinesisVideoServer) putMedia(w http.ResponseWriter, r *http.Request) {
 		baseTimecode = uint64(ts.UnixNano() / int64(time.Millisecond))
 	}
 
+	rc := http.NewResponseController(w)
+	rc.EnableFullDuplex()
+
 	time.Sleep(s.blockTime)
+	w.WriteHeader(200)
+	rc.Flush()
+
+	data := &struct {
+		Header  kvm.EBMLHeader `ebml:"EBML"`
+		Segment segmentChan    `ebml:",size=unknown"`
+	}{
+		Segment: segmentChan{
+			Cluster: make(chan ClusterTest),
+			Tags:    make(chan TagsTest),
+		},
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		cancel()
+		wg.Wait()
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		var lastCluster *ClusterTest
+		var lastTags *TagsTest
+		write := func() {
+			if lastCluster == nil {
+				return
+			}
+			if lastTags == nil {
+				lastTags = &TagsTest{}
+			}
+			lastCluster.Timecode += baseTimecode
+			fragment := FragmentTest{
+				Cluster: *lastCluster,
+				Tags:    *lastTags,
+			}
+			if s.putMediaHook != nil {
+				if !s.putMediaHook(lastCluster.Timecode, &fragment, w) {
+					rc.Flush()
+					return
+				}
+				rc.Flush()
+			}
+			s.mu.Lock()
+			s.fragments[FragmentNumberFromTimecode(lastCluster.Timecode)] = fragment
+			s.mu.Unlock()
+
+			fmt.Fprintf(w,
+				`{"EventType":"PERSISTED", "FragmentTimecode":%d, "FragmentNumber":"%s"}`,
+				lastCluster.Timecode, FragmentNumberFromTimecode(lastCluster.Timecode),
+			)
+			rc.Flush()
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				write()
+				return
+			case cluster := <-data.Segment.Cluster:
+				if lastCluster != nil {
+					write()
+					lastCluster = nil
+					lastTags = nil
+				}
+				lastCluster = &cluster
+			case tags := <-data.Segment.Tags:
+				lastTags = &tags
+				write()
+				lastCluster = nil
+				lastTags = nil
+			}
+		}
+	}()
+
 	if err := ebml.Unmarshal(r.Body, data); err != nil {
-		w.WriteHeader(500)
-		fmt.Fprintf(w, "%v", err)
+		fmt.Fprint(w, `{"EventType":"ERROR", "ErrorId":4006, "ErrorCode":"INVALID_MKV_DATA"}`)
+		rc.Flush()
 		return
 	}
-
-	data.Segment.Cluster.Timecode += baseTimecode
-	fragment := FragmentTest{
-		Cluster: data.Segment.Cluster,
-		Tags:    data.Segment.Tags,
-	}
-	if s.putMediaHook != nil {
-		if !s.putMediaHook(data.Segment.Cluster.Timecode, &fragment, w) {
-			return
-		}
-	}
-	s.mu.Lock()
-	s.fragments[FragmentNumberFromTimecode(data.Segment.Cluster.Timecode)] = fragment
-	s.mu.Unlock()
-
-	fmt.Fprintf(w,
-		`{"EventType":"PERSISTED", "FragmentTimecode":%d, "FragmentNumber":"%s"}`,
-		baseTimecode+data.Segment.Cluster.Timecode, FragmentNumberFromTimecode(data.Segment.Cluster.Timecode),
-	)
 }
 
 func (s *KinesisVideoServer) getMedia(w http.ResponseWriter, r *http.Request) {
-	bs, err := ioutil.ReadAll(r.Body)
+	bs, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "%v", err)
@@ -284,18 +341,19 @@ type segment struct {
 	Tags    TagsTest
 }
 
+type segmentChan struct {
+	Info    kvm.Info
+	Tracks  kvm.Tracks
+	Cluster chan ClusterTest `ebml:",size=unknown"`
+	Tags    chan TagsTest
+}
+
 type FragmentTest struct {
 	Cluster ClusterTest
 	Tags    TagsTest
 }
 
 type ClusterTest struct {
-	Timecode    uint64
-	Position    uint64 `ebml:",omitempty"`
-	SimpleBlock []ebml.Block
-}
-
-type ClusterTestChan struct {
 	Timecode    uint64
 	Position    uint64 `ebml:",omitempty"`
 	SimpleBlock []ebml.Block

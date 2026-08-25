@@ -15,7 +15,6 @@
 package kinesisvideomanager_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -43,8 +42,6 @@ const fragmentEventFmt = `{"EventType":"ERROR","FragmentTimecode":%d,"FragmentNu
 func TestProvider(t *testing.T) {
 	var mu sync.Mutex
 
-	retryOpt := kvm.WithPutMediaRetry(2, 100*time.Millisecond)
-
 	startTimestamp := time.Now()
 	startTimestampInMillis := uint64(startTimestamp.UnixNano() / int64(time.Millisecond))
 
@@ -71,72 +68,18 @@ func TestProvider(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		mockServerOpts        func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption
-		putMediaOpts          []kvm.PutMediaOption
-		expected              []kvsm.FragmentTest
-		expectedNewConnCnt    int
-		expectedSwitchConnCnt int
-		errCheck              func(*testing.T, int, error) bool
+		mockServerOpts func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption
+		putMediaOpts   []kvm.PutMediaOption
+		expected       []kvsm.FragmentTest
 	}{
 		"NoError": {
-			mockServerOpts:        func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption { return nil },
-			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
-		},
-		"HTTPErrorRetry": {
-			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
-				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
-						mu.Lock()
-						defer mu.Unlock()
-						if !dropped[timecode] {
-							dropped[timecode] = true
-							w.WriteHeader(500)
-							if _, err := w.Write([]byte("Dummy error")); err != nil {
-								t.Error(err)
-							}
-							t.Logf("HTTP error injected: timecode=%d", timecode)
-							return false
-						}
-						return true
-					}),
-				}
-			},
-			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
-			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
-		},
-		"DelayedHTTPErrorRetry": {
-			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
-				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
-						mu.Lock()
-						defer mu.Unlock()
-						if !dropped[timecode] {
-							time.Sleep(75 * time.Millisecond)
-							dropped[timecode] = true
-							w.WriteHeader(500)
-							if _, err := w.Write([]byte("Dummy error")); err != nil {
-								t.Error(err)
-							}
-							t.Logf("HTTP error injected: timecode=%d", timecode)
-							return false
-						}
-						return true
-					}),
-				}
-			},
-			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
-			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
+			mockServerOpts: func(*testing.T, map[uint64]bool, *bool, func()) []kvsm.KinesisVideoServerOption { return nil },
+			expected:       []kvsm.FragmentTest{expected0, expected1, expected2},
 		},
 		"KinesisErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w io.Writer) bool {
 						mu.Lock()
 						defer mu.Unlock()
 						if !dropped[timecode] {
@@ -151,131 +94,12 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
-			expected:              []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
-		},
-		"KinesisFailDumpShort": {
-			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
-				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
-						if _, err := w.Write([]byte(fmt.Sprintf(fragmentEventFmt, timecode))); err != nil {
-							t.Error(err)
-						}
-						t.Logf("Kinesis error injected: timecode=%d", timecode)
-						return false
-					}),
-				}
-			},
-			putMediaOpts: []kvm.PutMediaOption{
-				retryOpt,
-				kvm.WithFragmentHeadDumpLen(17),
-				kvm.WithSegmentUID([]byte{0x00, 0x01, 0x02, 0x03}),
-			},
-			expected:              []kvsm.FragmentTest{},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
-			errCheck: func(t *testing.T, cnt int, err error) bool {
-				if err == nil {
-					t.Error("Expected error")
-					return false
-				}
-				if cnt != 2 {
-					// Skip first fragment.
-					return false
-				}
-				fe, ok := err.(*kvm.FragmentEventError)
-				if !ok {
-					t.Errorf("Expected FragmentEventError, got %T", err)
-					return false
-				}
-				expectedDump := []byte{
-					0x1a, 0x45, 0xdf, 0xa3, 0xa3, // EBML
-					0x42, 0x86, 0x81, 0x01, // EBMLVersion
-					0x42, 0xf7, 0x81, 0x01, // ReadVersion
-					0x42, 0xf2, 0x81, 0x04, // MaxIDLength
-				}
-				if dump := fe.Dump(); !bytes.Equal(expectedDump, dump) {
-					t.Errorf("Expected dump:\n%v\ngot:\n%v", expectedDump, dump)
-				}
-				return true
-			},
-		},
-		"KinesisFailDump": {
-			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
-				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
-						if _, err := w.Write([]byte(fmt.Sprintf(fragmentEventFmt, timecode))); err != nil {
-							t.Error(err)
-						}
-						t.Logf("Kinesis error injected: timecode=%d", timecode)
-						return false
-					}),
-				}
-			},
-			putMediaOpts: []kvm.PutMediaOption{
-				retryOpt,
-				kvm.WithFragmentHeadDumpLen(512),
-				kvm.WithSegmentUID([]byte{0x00, 0x01, 0x02, 0x03}),
-			},
-			expected:              []kvsm.FragmentTest{},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
-			errCheck: func(t *testing.T, cnt int, err error) bool {
-				if err == nil {
-					t.Error("Expected error")
-					return false
-				}
-				if cnt != 2 {
-					// Skip first fragment.
-					return false
-				}
-				fe, ok := err.(*kvm.FragmentEventError)
-				if !ok {
-					t.Errorf("Expected FragmentEventError, got %T", err)
-					return false
-				}
-				expectedDump := []byte{
-					0x1a, 0x45, 0xdf, 0xa3, 0xa3, // EBML
-					0x42, 0x86, 0x81, 0x01, // EBMLVersion
-					0x42, 0xf7, 0x81, 0x01, // ReadVersion
-					0x42, 0xf2, 0x81, 0x04, // MaxIDLength
-					0x42, 0xf3, 0x81, 0x08, // MaxSizeLength
-					0x42, 0x82, 0x88, 0x6d, 0x61, 0x74, 0x72, 0x6f, 0x73, 0x6b, 0x61, // DocType
-					0x42, 0x87, 0x81, 0x02, // DocTypeVersion
-					0x42, 0x85, 0x81, 0x02, // DocTypeReadVersion
-					0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Segment
-					0x15, 0x49, 0xa9, 0x66, 0xee, // Info
-					0x2a, 0xd7, 0xb1, 0x83, 0x0f, 0x42, 0x40, // TimecodeScale
-					0x73, 0xa4, 0x84, 0x00, 0x01, 0x02, 0x03, // SegmentUID
-					0x73, 0x84, 0x80, // SegmentFilename
-					0x7b, 0xa9, 0x9c, 0x6b, 0x69, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x76, 0x69, 0x64, 0x65, 0x6f, 0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x72, 0x2e, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, // Title
-					0x4d, 0x80, 0x9c, 0x6b, 0x69, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x76, 0x69, 0x64, 0x65, 0x6f, 0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x72, 0x2e, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, // MuxingApp
-					0x57, 0x41, 0x9c, 0x6b, 0x69, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x76, 0x69, 0x64, 0x65, 0x6f, 0x6d, 0x61, 0x6e, 0x61, 0x67, 0x65, 0x72, 0x2e, 0x50, 0x72, 0x6f, 0x76, 0x69, 0x64, 0x65, 0x72, // WritingApp
-					0x16, 0x54, 0xae, 0x6b, 0x80, // Tracks
-					0x1f, 0x43, 0xb6, 0x75, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // Cluster
-					0xe7, 0x82, 0x00, 0x00, // Timecode
-					0xa3, 0x86, 0x81, 0x00, 0x00, 0x00, 0x01, 0x02, // SimpleBlock
-					0xa3, 0x86, 0x81, 0x00, 0x01, 0x00, 0x01, 0x02, // SimpleBlock
-					0x12, 0x54, 0xc3, 0x67, 0x95, // Tags
-					0x73, 0x73, 0x92, // Tag
-					0x67, 0xc8, 0x8f, // SimpleTag
-					0x45, 0xa3, 0x88, 0x54, 0x45, 0x53, 0x54, 0x5f, 0x54, 0x41, 0x47, // TagName
-					0x44, 0x87, 0x81, 0x32, // TagString
-				}
-				dump := fe.Dump()
-				dump[186], dump[187] = 0, 0 // clear Timecode
-				if !bytes.Equal(expectedDump, dump) {
-					t.Errorf("Expected dump:\n%v\ngot:\n%v", expectedDump, dump)
-				}
-				return true
-			},
+			expected: []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
 		},
 		"DelayedKinesisErrorRetry": {
 			mockServerOpts: func(t *testing.T, dropped map[uint64]bool, _ *bool, _ func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w io.Writer) bool {
 						mu.Lock()
 						defer mu.Unlock()
 						if !dropped[timecode] {
@@ -291,15 +115,12 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
-			expected:              []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
+			expected: []kvsm.FragmentTest{expected0, expected0, expected1, expected1, expected2, expected2},
 		},
 		"DisconnectRetry": {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w io.Writer) bool {
 						mu.Lock()
 						defer mu.Unlock()
 						if !*disconnected {
@@ -312,15 +133,12 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
-			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
+			expected: []kvsm.FragmentTest{expected0, expected1, expected2},
 		},
 		"DelayedDisconnectRetry": {
 			mockServerOpts: func(t *testing.T, _ map[uint64]bool, disconnected *bool, disconnect func()) []kvsm.KinesisVideoServerOption {
 				return []kvsm.KinesisVideoServerOption{
-					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
+					kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w io.Writer) bool {
 						mu.Lock()
 						defer mu.Unlock()
 						if !*disconnected {
@@ -334,10 +152,7 @@ func TestProvider(t *testing.T) {
 					}),
 				}
 			},
-			putMediaOpts:          []kvm.PutMediaOption{retryOpt},
-			expected:              []kvsm.FragmentTest{expected0, expected1, expected2},
-			expectedNewConnCnt:    3,
-			expectedSwitchConnCnt: 3,
+			expected: []kvsm.FragmentTest{expected0, expected1, expected2},
 		},
 	}
 
@@ -370,9 +185,7 @@ func TestProvider(t *testing.T) {
 			var response []kvm.FragmentEvent
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 
-			var cntErr, cntTag uint32
-			var skipBelow uint32
-			var cntNewConn, cntSwitchConn uint32
+			var cntTag uint32
 			opts := []kvm.PutMediaOption{
 				kvm.WithFragmentTimecodeType(kvm.FragmentTimecodeTypeRelative),
 				kvm.WithProducerStartTimestamp(startTimestamp),
@@ -381,20 +194,6 @@ func TestProvider(t *testing.T) {
 					return []kvm.SimpleTag{
 						{TagName: "TEST_TAG", TagString: fmt.Sprintf("%d", cnt)},
 					}
-				}),
-				kvm.OnError(func(e error) {
-					if testCase.errCheck != nil {
-						cnt := atomic.AddUint32(&cntErr, 1)
-						if testCase.errCheck(t, int(cnt), e) {
-							atomic.StoreUint32(&skipBelow, 1)
-						}
-					}
-				}),
-				kvm.OnPutMediaNewConn(func() {
-					atomic.AddUint32(&cntNewConn, 1)
-				}),
-				kvm.OnPutMediaSwitchConn(func(uint64) {
-					atomic.AddUint32(&cntSwitchConn, 1)
 				}),
 			}
 			opts = append(opts, testCase.putMediaOpts...)
@@ -428,15 +227,12 @@ func TestProvider(t *testing.T) {
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
-			if err := w.Shutdown(ctx); err != nil {
+			if err := w.Close(); err != nil {
 				t.Fatal(err)
 			}
 
 			wg.Wait()
 			cancel()
-			if skipBelow == 1 {
-				return
-			}
 
 			<-ctx.Done()
 			if ctx.Err() == context.DeadlineExceeded {
@@ -451,12 +247,6 @@ func TestProvider(t *testing.T) {
 				)
 			}
 
-			if int(cntNewConn) != testCase.expectedNewConnCnt {
-				t.Errorf("Expected count of new connection: %d, got: %d", testCase.expectedNewConnCnt, cntNewConn)
-			}
-			if int(cntSwitchConn) != testCase.expectedSwitchConnCnt {
-				t.Errorf("Expected count of switch connection: %d, got: %d", testCase.expectedSwitchConnCnt, cntSwitchConn)
-			}
 			for _, fragment := range testCase.expected {
 				actual, ok := server.GetFragment(fragment.Cluster.Timecode)
 				if !ok {
@@ -484,167 +274,20 @@ func TestProvider_WithHttpClient(t *testing.T) {
 
 	pro := newProvider(t, server)
 
-	timecodes := []uint64{
-		1000,
-		10001,
-	}
-
 	// Cause timeout error
 	client := &http.Client{
-		Timeout: blockTime / 2,
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: time.Nanosecond,
+			}).DialContext,
+		},
 	}
-	var errBg error
-	w, err := pro.PutMedia(
+	_, err := pro.PutMedia(
 		kvm.WithHttpClient(client),
-		kvm.OnError(func(e error) { errBg = e }),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		for {
-			if _, err := w.ReadResponse(); err != nil {
-				return
-			}
-		}
-	}()
-	for _, tc := range timecodes {
-		if err := w.Write(&kvm.BlockWithBaseTimecode{
-			Timecode: tc,
-			Block:    newBlock(0),
-		}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := w.Shutdown(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 	var netErr net.Error
-	if !errors.As(errBg, &netErr) || !netErr.Timeout() {
-		t.Fatalf("Err must be timeout error but %v", errBg)
-	}
-}
-
-func TestProvider_WithPutMediaLogger(t *testing.T) {
-	server := kvsm.NewKinesisVideoServer(
-		kvsm.WithPutMediaHook(func(timecode uint64, f *kvsm.FragmentTest, w http.ResponseWriter) bool {
-			if _, err := w.Write([]byte(
-				fmt.Sprintf(fragmentEventFmt, timecode),
-			)); err != nil {
-				t.Error(err)
-			}
-			t.Logf("Kinesis error injected: timecode=%d", timecode)
-			return false
-		}),
-	)
-	defer server.Close()
-
-	pro := newProvider(t, server)
-
-	var logger dummyDebugfLogger
-	w, err := pro.PutMedia(
-		kvm.WithPutMediaLogger(&logger),
-		kvm.OnError(func(error) {}),
-		kvm.WithConnectionTimeout(time.Millisecond),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	go func() {
-		for {
-			if _, err := w.ReadResponse(); err != nil {
-				return
-			}
-		}
-	}()
-	time.Sleep(10 * time.Millisecond)
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	expected := `Receiving block timed out, clean connections: { StreamID: "test-stream" }`
-	if expected != logger.lastErr {
-		t.Errorf("Expected log: '%s', got: '%s'", expected, logger.lastErr)
-	}
-}
-
-func TestProvider_shutdownTwice(t *testing.T) {
-	server := kvsm.NewKinesisVideoServer()
-	defer server.Close()
-
-	pro := newProvider(t, server)
-
-	w, err := pro.PutMedia()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	go func() {
-		for {
-			if _, err := w.ReadResponse(); err != nil {
-				return
-			}
-		}
-	}()
-	time.Sleep(10 * time.Millisecond)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	if err := w.Shutdown(ctx); err != context.Canceled {
-		t.Fatalf("Expected error: %v, got: %v", context.Canceled, err)
-	}
-	if err := w.Shutdown(ctx); err != context.Canceled {
-		t.Fatalf("Expected error: %v, got: %v", context.Canceled, err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestProvider_writeAfterClose(t *testing.T) {
-	server := kvsm.NewKinesisVideoServer()
-	defer server.Close()
-
-	for i := 0; i < 100 && !t.Failed(); i++ {
-		pro := newProvider(t, server)
-
-		w, err := pro.PutMedia(
-			kvm.OnError(func(e error) {}),
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		go func() {
-			for {
-				if _, err := w.ReadResponse(); err != nil {
-					return
-				}
-			}
-		}()
-		time.Sleep(10 * time.Millisecond)
-
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		go func() {
-			defer wg.Done()
-			if err := w.Close(); err != nil {
-				t.Error(err)
-			}
-		}()
-		go func() {
-			defer wg.Done()
-			if err := w.Write(&kvm.BlockWithBaseTimecode{
-				Timecode: 1,
-				Block:    newBlock(0),
-			}); err != nil {
-				t.Error(err)
-			}
-		}()
-		wg.Wait()
+	if !errors.As(err, &netErr) || !netErr.Timeout() {
+		t.Errorf("Err must be timeout error but %v", err)
 	}
 }
 

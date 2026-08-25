@@ -15,16 +15,13 @@
 package kinesisvideomanager
 
 import (
-	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"regexp"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -59,8 +56,6 @@ type Provider struct {
 	endpoint string
 	tracks   []TrackEntry
 	cli      *Client
-
-	bufferPool sync.Pool
 }
 
 // Provider creates a KVS provider client.
@@ -83,11 +78,6 @@ func (c *Client) Provider(ctx context.Context, streamID StreamID, tracks []Track
 		endpoint: *ep.DataEndpoint + "/putMedia",
 		tracks:   tracks,
 		cli:      c,
-		bufferPool: sync.Pool{
-			New: func() interface{} {
-				return bytes.NewBuffer(make([]byte, 1024))
-			},
-		},
 	}, nil
 }
 
@@ -96,19 +86,14 @@ type BlockWriter interface {
 	Write(*BlockWithBaseTimecode) error
 	// ReadResponse reads a response from Kinesis Video Stream.
 	ReadResponse() (*FragmentEvent, error)
-	// Close immediately shuts down the client.
+	// Close shuts down the client.
 	Close() error
-	// Shutdown gracefully shuts down the client without interrupting on-going PutMedia request.
-	// If Shotdown returned an error, some of the internal resources might not released yet and
-	// caller should call Shutdown or Close again.
-	Shutdown(ctx context.Context) error
 }
 
 type blockWriter struct {
 	fnWrite        func(*BlockWithBaseTimecode) error
 	fnReadResponse func() (*FragmentEvent, error)
 	fnClose        func() error
-	fnShutdown     func(ctx context.Context) error
 }
 
 func (w *blockWriter) Write(bt *BlockWithBaseTimecode) error {
@@ -123,206 +108,160 @@ func (w *blockWriter) Close() error {
 	return w.fnClose()
 }
 
-func (w *blockWriter) Shutdown(ctx context.Context) error {
-	return w.fnShutdown(ctx)
-}
-
 type PutMediaOptions struct {
 	segmentUID             []byte
 	title                  string
 	fragmentTimecodeType   FragmentTimecodeType
 	producerStartTimestamp string
-	connectionTimeout      time.Duration
 	httpClient             aws.HTTPClient
 	tags                   func() []SimpleTag
-	retryCount             int
-	retryIntervalBase      time.Duration
-	fragmentHeadDumpLen    int
-	lenBlockBuffer         int
-	lenResponseBuffer      int
-	logger                 LoggerIF
-
-	onError      func(error)
-	onNewConn    func()
-	onSwitchConn func(uint64)
 }
 
 type PutMediaOption func(*PutMediaOptions)
 
-type connection struct {
-	*BlockChWithBaseTimecode
-	baseTimecode uint64
-	onceClose    sync.Once
-	onceInit     sync.Once
-	nBlock       uint64
-}
-
-func newConnection(opts *PutMediaOptions) *connection {
-	return &connection{
-		BlockChWithBaseTimecode: &BlockChWithBaseTimecode{
-			Timecode: make(chan uint64, 1),
-			Block:    make(chan ebml.Block, opts.lenBlockBuffer),
-			Tag:      make(chan *Tag, 1),
-		},
-	}
-}
-func (c *connection) initialize(baseTimecode uint64, opts *PutMediaOptions) {
-	c.onceInit.Do(func() {
-		c.baseTimecode = baseTimecode
-		c.Timecode <- c.baseTimecode
-		close(c.Timecode)
-
-		if opts.tags != nil {
-			c.Tag <- &Tag{SimpleTag: opts.tags()}
-		}
-		close(c.Tag)
-	})
-}
-
-func (c *connection) close() {
-	// Ensure Timecode and Tag channels are closed
-	c.initialize(0, &PutMediaOptions{})
-
-	c.onceClose.Do(func() {
-		close(c.Block)
-	})
-}
-
-func (c *connection) countBlock() {
-	atomic.AddUint64(&c.nBlock, 1)
-}
-
-func (c *connection) numBlock() int {
-	return int(atomic.LoadUint64(&c.nBlock))
-}
-
 // PutMedia opens connection to Kinesis Video Stream to put media blocks.
 // This function immediately returns BlockWriter.
-// BlockWriter.ReadResponse() must be called until getting io.EOF as error,
-// otherwise Write() call will be blocked after the buffer is filled.
 func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 	var options *PutMediaOptions
 	options = &PutMediaOptions{
 		title:                  "kinesisvideomanager.Provider",
 		fragmentTimecodeType:   FragmentTimecodeTypeRelative,
 		producerStartTimestamp: "0",
-		connectionTimeout:      15 * time.Second,
-		onError:                func(err error) { options.logger.Error(err) },
-		httpClient: &http.Client{
-			Timeout: 0,
-		},
-		lenBlockBuffer:    10,
-		lenResponseBuffer: 10,
-		logger:            Logger(),
+		httpClient:             http.DefaultClient,
 	}
 	for _, o := range opts {
 		o(options)
 	}
-	segmentUuid := options.segmentUID
-	if segmentUuid == nil {
-		var err error
-		segmentUuid, err = generateRandomUUID()
+
+	chResp := make(chan *FragmentEvent)
+
+	newConnection := func(ctx context.Context) (io.Writer, func() error, error) {
+		r, w := io.Pipe()
+
+		req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, r)
 		if err != nil {
-			return nil, err
+			return nil, nil, fmt.Errorf("creating http request: %w", err)
 		}
+		if p.streamID.StreamName() != nil {
+			req.Header.Set("x-amzn-stream-name", *p.streamID.StreamName())
+		}
+		if p.streamID.StreamARN() != nil {
+			req.Header.Set("x-amzn-stream-arn", *p.streamID.StreamARN())
+		}
+		req.Header.Set("x-amzn-fragment-timecode-type", string(options.fragmentTimecodeType))
+		req.Header.Set("x-amzn-producer-start-timestamp", options.producerStartTimestamp)
+
+		if err := p.cli.sign(ctx, req, nil); err != nil {
+			return nil, nil, fmt.Errorf("presigning http request: %w", err)
+		}
+		res, err := options.httpClient.Do(req)
+		if err != nil {
+			return nil, nil, fmt.Errorf("sending http request: %w", err)
+		}
+
+		if res.StatusCode != 200 {
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				return nil, nil, fmt.Errorf("reading http response: %w", err)
+			}
+			return nil, nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
+		}
+
+		segmentUuid := options.segmentUID
+		if segmentUuid == nil {
+			var err error
+			segmentUuid, err = generateRandomUUID()
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		header := struct {
+			Header  EBMLHeader  `ebml:"EBML"`
+			Segment SegmentHead `ebml:",size=unknown"`
+		}{
+			Header: EBMLHeader{
+				EBMLVersion:            1,
+				EBMLReadVersion:        1,
+				EBMLMaxIDLength:        4,
+				EBMLMaxSizeLength:      8,
+				EBMLDocType:            "matroska",
+				EBMLDocTypeVersion:     2,
+				EBMLDocTypeReadVersion: 2,
+			},
+			Segment: SegmentHead{
+				Info: Info{
+					SegmentUID:    segmentUuid,
+					TimecodeScale: TimecodeScale,
+					Title:         options.title,
+					MuxingApp:     "kinesisvideomanager.Provider",
+					WritingApp:    "kinesisvideomanager.Provider",
+				},
+				Tracks: Tracks{
+					TrackEntry: p.tracks,
+				},
+			},
+		}
+		if err := ebml.Marshal(&header, w); err != nil {
+			return nil, nil, err
+		}
+
+		decResp := json.NewDecoder(res.Body)
+		go func() {
+			for {
+				var fe FragmentEvent
+				if err := decResp.Decode(&fe); err != nil {
+					println(err.Error()) // TODO
+					close(chResp)
+					return
+				}
+				chResp <- &fe
+			}
+		}()
+
+		return w, func() error {
+			return res.Body.Close()
+		}, nil
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-
-	r, w := io.Pipe()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", p.endpoint, r)
+	w, fnClose, err := newConnection(ctx)
 	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("creating http request: %w", err)
-	}
-	if p.streamID.StreamName() != nil {
-		req.Header.Set("x-amzn-stream-name", *p.streamID.StreamName())
-	}
-	if p.streamID.StreamARN() != nil {
-		req.Header.Set("x-amzn-stream-arn", *p.streamID.StreamARN())
-	}
-	req.Header.Set("x-amzn-fragment-timecode-type", string(options.fragmentTimecodeType))
-	req.Header.Set("x-amzn-producer-start-timestamp", options.producerStartTimestamp)
-
-	if err := p.cli.sign(ctx, req, nil); err != nil {
-		cancel()
-		return nil, fmt.Errorf("presigning http request: %w", err)
-	}
-	res, err := options.httpClient.Do(req)
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("sending http request: %w", err)
-	}
-
-	header := struct {
-		Header  EBMLHeader  `ebml:"EBML"`
-		Segment SegmentHead `ebml:",size=unknown"`
-	}{
-		Header: EBMLHeader{
-			EBMLVersion:            1,
-			EBMLReadVersion:        1,
-			EBMLMaxIDLength:        4,
-			EBMLMaxSizeLength:      8,
-			EBMLDocType:            "matroska",
-			EBMLDocTypeVersion:     2,
-			EBMLDocTypeReadVersion: 2,
-		},
-		Segment: SegmentHead{
-			Info: Info{
-				SegmentUID:    segmentUuid,
-				TimecodeScale: TimecodeScale,
-				Title:         options.title,
-				MuxingApp:     "kinesisvideomanager.Provider",
-				WritingApp:    "kinesisvideomanager.Provider",
-			},
-			Tracks: Tracks{
-				TrackEntry: p.tracks,
-			},
-		},
-	}
-	if err := ebml.Marshal(&header, w); err != nil {
 		cancel()
 		return nil, err
 	}
 
-	if res.StatusCode != 200 {
-		body, err := ioutil.ReadAll(res.Body)
-		cancel()
-		if err != nil {
-			return nil, fmt.Errorf("reading http response: %w", err)
-		}
-		return nil, fmt.Errorf("%d: %s", res.StatusCode, string(body))
-	}
-
-	chResp := make(chan *FragmentEvent, options.lenResponseBuffer)
-	chFE := make(chan *FragmentEvent)
-	go func() {
-		for fe := range chFE {
-			switch fe.EventType {
-			case FRAGMENT_EVENT_ERROR:
-				cancel()
-			case FRAGMENT_EVENT_PERSISTED:
-			}
-			chResp <- fe
-		}
-		close(chResp)
-	}()
-	go func() {
-		if err := parseFragmentEvent(
-			res.Body, chFE,
-		); err != nil && err != context.Canceled {
-			println("parseFragmentEvent", err.Error())
-		}
-	}()
-
 	const invalidTimecode = uint64(0xFFFFFFFFFFFFFFFF)
 	var clusterTimecode uint64 = invalidTimecode
+
+	writeTags := func() error {
+		if options.tags == nil {
+			return nil
+		}
+		tags := options.tags()
+		if len(tags) == 0 {
+			return nil
+		}
+		data := struct {
+			Tags TagsWrite
+		}{
+			Tags: TagsWrite{
+				Tag: Tag{
+					SimpleTag: tags,
+				},
+			},
+		}
+		return ebml.Marshal(&data, w)
+	}
 
 	writer := &blockWriter{
 		fnWrite: func(bt *BlockWithBaseTimecode) error {
 			absTime := uint64(bt.AbsTimecode())
 			if clusterTimecode == invalidTimecode || absTime > clusterTimecode+9000 {
+				if clusterTimecode != invalidTimecode {
+					if err := writeTags(); err != nil {
+						return err
+					}
+				}
 				clusterTimecode = absTime
 				cluster := struct {
 					Cluster ClusterHead `ebml:",size=unknown"`
@@ -347,20 +286,15 @@ func (p *Provider) PutMedia(opts ...PutMediaOption) (BlockWriter, error) {
 			return nil
 		},
 		fnReadResponse: func() (*FragmentEvent, error) {
-			resp, ok := <-chResp
+			fe, ok := <-chResp
 			if !ok {
 				return nil, io.EOF
 			}
-			return resp, nil
-		},
-		fnShutdown: func(ctx context.Context) error {
-			cancel()
-			return nil
+			return fe, nil
 		},
 		fnClose: func() error {
-			_ = res.Body.Close()
-			cancel()
-			return nil
+			_ = writeTags()
+			return fnClose()
 		},
 	}
 
@@ -395,21 +329,6 @@ func WithProducerStartTimestamp(producerStartTimestamp time.Time) PutMediaOption
 	}
 }
 
-func WithConnectionTimeout(timeout time.Duration) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.connectionTimeout = timeout
-	}
-}
-
-// WithFragmentHeadDumpLen sets fragment data head dump length embedded to the FragmentEvent error message.
-// Data dump is enabled only if PutMediaRetry is enabled.
-// Set zero to disable.
-func WithFragmentHeadDumpLen(n int) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.fragmentHeadDumpLen = n
-	}
-}
-
 func WithHttpClient(client aws.HTTPClient) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.httpClient = client
@@ -419,54 +338,5 @@ func WithHttpClient(client aws.HTTPClient) PutMediaOption {
 func WithTags(tags func() []SimpleTag) PutMediaOption {
 	return func(p *PutMediaOptions) {
 		p.tags = tags
-	}
-}
-
-func OnError(onError func(error)) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.onError = onError
-	}
-}
-
-// OnPutMediaNewConn registers a func that will be called before
-// creating a new PutMedia API connection.
-// Media stream processing is blocked until the func returns.
-func OnPutMediaNewConn(onNewConn func()) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.onNewConn = onNewConn
-	}
-}
-
-// OnPutMediaSwitchConn registers a func that will be called before
-// switching a PutMedia API connection.
-// Media stream processing is blocked until the func returns.
-func OnPutMediaSwitchConn(onSwitchConn func(timecode uint64)) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.onSwitchConn = onSwitchConn
-	}
-}
-
-func WithPutMediaRetry(count int, intervalBase time.Duration) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.retryCount = count
-		p.retryIntervalBase = intervalBase
-	}
-}
-
-func WithPutMediaBufferLen(n int) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.lenBlockBuffer = n
-	}
-}
-
-func WithPutMediaResponseBufferLen(n int) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.lenResponseBuffer = n
-	}
-}
-
-func WithPutMediaLogger(logger LoggerIF) PutMediaOption {
-	return func(p *PutMediaOptions) {
-		p.logger = logger
 	}
 }
