@@ -4,16 +4,16 @@ go 1.24
 
 require (
 	github.com/at-wat/ebml-go v0.19.1
-	github.com/aws/aws-sdk-go-v2 v1.45.1
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.39
-	github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.39.0
-	github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.39.0
+	github.com/aws/aws-sdk-go-v2 v1.46.0
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.3
+	github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.40.0
+	github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.40.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.1 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.1 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.2 // indirect
 	github.com/aws/smithy-go v1.28.1 // indirect
 )
