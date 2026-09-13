@@ -18,10 +18,10 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 h1:bAdDl/
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19/go.mod h1:KaUzbLxv4CeSxh6ZCl9B4m7CuFenS8kUEaDs+f/DQr4=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3 h1:bON1rJf67TSTDCKg816AAIE4xSTtoo9tl0XRkO72R+I=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3/go.mod h1:c5BBpjJcQXpfeq9iASyVKA3T6vX6B6LEXY4mL/gklDY=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.40.0 h1:EmvBDPgE0q9ODrxgn6hWlUTz/y0x92MXs7KtqjZQ0ak=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.40.0/go.mod h1:zlbtD84DMuPcAdSrlQe+5BRkeOw0amjO34BtKQYq1NQ=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.40.0 h1:NuliPe8c0s8+OaPOhBGo13N/IdnmMrgd9mPzaARn9Y0=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.40.0/go.mod h1:lk7zqO2FJy4USXQDDu2xeYlprq/LAHqqzax4KADcqkY=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.41.0 h1:wURSnrKS1j7Mh8kMyVgEglCiZ25Czy3nUzUawdPN2C4=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.41.0/go.mod h1:Mu37vRbpu0JK5/yazwch7x7mgzD84kEriI+uQkC26Kk=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.41.0 h1:X6+fysQRz8pcEaSMahdu7hPbZYHQUpn4WUqdHnY3VPA=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.41.0/go.mod h1:dxWjS6/sFtdNczb3G/qClqo5HAm7/Mi7lF/XBcPJyH8=
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.0 h1:ZD5qFpWcaOKdTuhBi431pIDkCgrMkMlMT6jlpSPoIRI=
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.0/go.mod h1:8Nuuf+tR346PjJ3MvZPh9pekbLiLQFWJhzMXfwy7alA=
 github.com/aws/aws-sdk-go-v2/service/sso v1.38.0 h1:JGeeBcMlhg1xtOXYpeCaTQBZObtXMPQCUqBcmr65NRA=
