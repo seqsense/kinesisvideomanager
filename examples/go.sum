@@ -1,5 +1,5 @@
-github.com/at-wat/ebml-go v0.19.2 h1:W+/eivAXUfd5jwq9ToQvsunsLXnww4VXjygwoP9VS9o=
-github.com/at-wat/ebml-go v0.19.2/go.mod h1:wu3fQj+DWo6SOOl9c4yDi+gFs9Oa96Z2B5qxo1OxFYY=
+github.com/at-wat/ebml-go v0.19.3 h1:d+UC5nz3as8at1Ek4bhGPY5f+eoVYSQZmnTF4D+cJMs=
+github.com/at-wat/ebml-go v0.19.3/go.mod h1:wu3fQj+DWo6SOOl9c4yDi+gFs9Oa96Z2B5qxo1OxFYY=
 github.com/aws/aws-sdk-go-v2 v1.47.0 h1:0jsHallhJCeaU0Ko48c/3FK1ctOQ7NpzggxriJOQ8MQ=
 github.com/aws/aws-sdk-go-v2 v1.47.0/go.mod h1:bttEH6JqnUL8LepvDVfdrds/fZ5bCIxzpe3abyUrhDU=
 github.com/aws/aws-sdk-go-v2/config v1.33.5 h1:UA1dmokBFOLFoOyVBhO6HjM6edy0MIk5AZSkJVcksQw=
