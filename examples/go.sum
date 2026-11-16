@@ -2,8 +2,8 @@ github.com/at-wat/ebml-go v0.19.4 h1:6F767ThzH/JqNUsF79PwRFP0pwUF5ALXWJ6pXuiolI8
 github.com/at-wat/ebml-go v0.19.4/go.mod h1:wu3fQj+DWo6SOOl9c4yDi+gFs9Oa96Z2B5qxo1OxFYY=
 github.com/aws/aws-sdk-go-v2 v1.48.0 h1:tFU7EJVm7MfyaXLsXdYTZ0Vd6vwt9OljCyqq0gqk0Mc=
 github.com/aws/aws-sdk-go-v2 v1.48.0/go.mod h1:oeKU5p+TQBnpeLmU42WZLWvzv+ORLn+74n4QVLnm/Z0=
-github.com/aws/aws-sdk-go-v2/config v1.33.16 h1:fKRsu9Pj2IPIHzTcUdWB7JHY34q9+4XEGCy7WfZaLV4=
-github.com/aws/aws-sdk-go-v2/config v1.33.16/go.mod h1:wdEdQ9RBH3fnD/vicCDUIJqv8Ck3zOpxNz8e3/NtkG8=
+github.com/aws/aws-sdk-go-v2/config v1.33.18 h1:WC0C4jM/tewXG8DWXnoxXnusJPZTryPazqk2k/zgd2s=
+github.com/aws/aws-sdk-go-v2/config v1.33.18/go.mod h1:0kRpFgsnD59mC2bbbyOTVpaZ9RnXW/pFkqlfiwbgZaU=
 github.com/aws/aws-sdk-go-v2/credentials v1.21.0 h1:OViwhqeipkQzSHuO2eQDUCdLrI6r3nzGxFUyM8GqnCs=
 github.com/aws/aws-sdk-go-v2/credentials v1.21.0/go.mod h1:OffaVQod3fyZzhZJyPtw11WpHPF1uIHADc+/MYlXmbA=
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.9 h1:oH1E0tjN0g+ZRusbX1dsuat4FJ0z05l8hWaycSbDuNc=
@@ -18,10 +18,10 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25 h1:rKwkY3
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.25/go.mod h1:dBuAadQKd1F4Q4ZOg8gnFmuSHMRE40Pe3IfFwbtC4lE=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12 h1:wzAqMZ2O4+ij9HQqIrk+P9PBGacE0wOTuWB7Mo97//I=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.12/go.mod h1:/0TfyruByHsOlphzP26xDTRe2DKD0J1I1Uyy2TyP8EI=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.43.5 h1:/iUdabgjGLJhdcNCNNx5T0ogpNY35jKhlr6Zw/dQmd4=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.43.5/go.mod h1:79gJGwbgjBIs4TaJiLL3GXmWSXEPN9D8mclgJgKksKw=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.43.5 h1:kwXET54SkOOd022qJbR4zA5MLdY7n93rkcyNLDIFMq4=
-github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.43.5/go.mod h1:wAMhAX1pDuEsI6V+YjtL3TFBy3vOwoZN1uJHpmTRpG0=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.43.6 h1:/amZyq/HcZ1AGZtr7xVIoTAeGzcxbIHJD5U8WbeUxJo=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideo v1.43.6/go.mod h1:b/mvzqmLfEyDfoHW8yJMI2EoU1/UUfbK8zmeSeQ+ts0=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.43.6 h1:fGVpxZLRR7cbz/fivplhaUA+WPK1cy2eOsood10IcZY=
+github.com/aws/aws-sdk-go-v2/service/kinesisvideoarchivedmedia v1.43.6/go.mod h1:fCNd0WvQL0UytEesESstUv8HwIecbuIqOXOc5X1/d0s=
 github.com/aws/aws-sdk-go-v2/service/signin v1.13.1 h1:ssrDA6AKfXEc3h0Pf4EI4vQ8sN5Zd136SrU9Tjr0XPc=
 github.com/aws/aws-sdk-go-v2/service/signin v1.13.1/go.mod h1:LdwHjKqPE9VCC7sTlWcOAizZx3ZJYjmfwC/EW2tIIAE=
 github.com/aws/aws-sdk-go-v2/service/sso v1.39.5 h1:ANAoa+qt3/9kXnvQVgUyxcTzhzZf4DqaBS+M2DQrELU=
